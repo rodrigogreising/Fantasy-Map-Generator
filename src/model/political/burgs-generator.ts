@@ -1,5 +1,5 @@
 import { quadtree } from "d3-quadtree";
-import { MARINE_REALMS, manaOnPack, NODE_WEIGHTS } from "@/artae/geopolitics-costs";
+import { MARINE_REALMS, manaOnPack, NODE_WEIGHTS, nodeSeats } from "@/artae/geopolitics-costs";
 import { isMarineCulture } from "@/artae/marine-realms";
 import type { Label } from "@/model/annotations/labels-generator";
 import type { ProductionRecord } from "@/model/economy/production-generator";
@@ -99,13 +99,17 @@ class BurgModule {
 
     let burgsQuadtree = quadtree();
 
-    const generateCapitals = () => {
+    const generateCapitals = () => placeCapitals();
+
+    const placeCapitals = () => {
       const randomize = (score: number) => score * (0.5 + Math.random() * 0.5);
-      // Artae: strong nodes attract capitals, and marine peoples get their share of them
+      // Artae: capitals take the strongest nodes first (a realm is led from the biggest node it holds), and marine
+      // peoples get their share of them
       const mana = manaOnPack();
+      const seats = mana ? nodeSeats(mana, NODE_WEIGHTS.capitalSeat, 1) : undefined;
       const score = new Int16Array(
         Array.from(cells.s, (value, i) =>
-          randomize(value + (mana ? (NODE_WEIGHTS.capitalBonus * mana.level(i)) / 30 : 0))
+          randomize(value + (mana ? (NODE_WEIGHTS.capitalBonus * mana.level(i)) / 30 + seats![i] : 0))
         )
       );
       const sorted = populatedCells.sort((a, b) => score[b] - score[a]);
@@ -165,8 +169,11 @@ class BurgModule {
       const randomize = (score: number) => score * gauss(1, 3, 0, 20, 3);
       // Artae: towns cluster where mana is strong, as capitals do
       const mana = manaOnPack();
+      const seats = mana ? nodeSeats(mana, NODE_WEIGHTS.townSeat, 1) : undefined; // Artae: big towns sit on node cores
       const score = new Int16Array(
-        Array.from(cells.s, (value, i) => randomize(value + (mana ? (NODE_WEIGHTS.townBonus * mana.level(i)) / 30 : 0)))
+        Array.from(cells.s, (value, i) =>
+          randomize(value + (mana ? (NODE_WEIGHTS.townBonus * mana.level(i)) / 30 + seats![i] : 0))
+        )
       );
       const sorted = populatedCells.sort((a, b) => score[b] - score[a]);
 

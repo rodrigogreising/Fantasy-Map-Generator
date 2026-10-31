@@ -1,5 +1,7 @@
 // Artae: a fixed panel, top right, that shows the mana under the pointer at a glance: a big level number and coloured
 // bars for the local element mix, plus the dominant node and the realm. Shown while the Mana or Fronteras layer is on
+
+import { faunaLine } from "@/artae/ecology-view";
 import { ELEMENTS } from "@/artae/elements";
 import { nodeRealmSuffix, realms } from "@/artae/geopolitics";
 import { cachedField, elementLevels, findNode, nodes } from "@/artae/nodes";
@@ -54,13 +56,14 @@ function render(
   level: number,
   label: string,
   levels: { element: number; level: number }[],
-  foot: string
+  foot: string,
+  extra = ""
 ) {
   const element = panel();
   element.innerHTML = `<div class="realm">${escapeText(realm)}</div>
     <div class="level"><b>${level.toFixed(1)}</b><span>${label}</span></div>
     ${bars(levels)}
-    <div class="foot">${escapeText(foot)}</div>`;
+    <div class="foot">${escapeText(foot)}</div>${extra ? `<div class="foot">${escapeText(extra)}</div>` : ""}`;
   element.style.display = "block";
 }
 
@@ -92,7 +95,7 @@ export function updateManaPanel(cellId: number, gridCell: number, nodeId?: numbe
   const levels = elementLevels(gridCell)
     .map((value, element) => ({ element, level: value }))
     .sort((a, b) => b.level - a.level);
-  render(realmText, level[gridCell], "nivel de mana", levels, foot);
+  render(realmText, level[gridCell], "nivel de mana", levels, foot, faunaLine(gridCell)); // Artae: ecology
 }
 
 export function hideManaPanel(): void {

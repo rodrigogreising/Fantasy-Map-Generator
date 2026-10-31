@@ -3,6 +3,8 @@
 
 import { applyPreset } from "@/app/layers-presets";
 import { regenerateMap } from "@/app/lifecycle";
+import { ecology, ecologySummary } from "@/artae/ecology";
+import { showEcology } from "@/artae/ecology-view";
 import { ELEMENTS, elementLabel } from "@/artae/elements";
 import { colorRealmsByEssence, geopoliticsTable, showGeopolitics } from "@/artae/geopolitics";
 import { archetypesByName, townInstitutions } from "@/artae/institutions";
@@ -247,7 +249,16 @@ async function newWorld({
   const before = mapHistory.length;
   regenerateMap(seed ? { seed } : "artae new world");
   await waitFor(() => mapHistory.length > before, 600000);
-  return { seed: options.map.seed, gridCells: grid.cells.i.length, coordinates: options.map.geography.coordinates };
+  // terrain first, then the nodes it gives rise to, then the civilization built on the nodes
+  generateNodes();
+  const politics = await regeneratePolitics();
+  return {
+    seed: options.map.seed,
+    gridCells: grid.cells.i.length,
+    coordinates: options.map.geography.coordinates,
+    nodes: nodes().length,
+    ...politics
+  };
 }
 
 type View = "viewStandard" | "viewMesh" | "viewGlobe";
@@ -286,9 +297,11 @@ const nodeTools = {
   get elements() {
     return ELEMENTS;
   },
-  /** Replace all nodes; redraws markers and regions */
-  generate(options?: { extra?: number }) {
+  /** Replace all unlocked nodes, then rebuild the civilization on them (it sits on the nodes), unless
+   * `politics: false`; redraws */
+  async generate({ politics = true, ...options }: { extra?: number; politics?: boolean } = {}) {
     const made = generateNodes(options);
+    if (politics) await regeneratePolitics();
     Layers.draw("nodes", "elements");
     void refresh3d();
     return {
@@ -344,6 +357,9 @@ const bridge = {
   profile,
   loadProfile,
   regeneratePolitics,
+  ecology,
+  ecologySummary,
+  showEcology,
   upgradeMap,
   view,
   setDefaultView,

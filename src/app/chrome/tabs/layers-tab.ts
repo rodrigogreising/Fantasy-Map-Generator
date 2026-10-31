@@ -25,6 +25,7 @@ export const LAYER_PRESETS: Record<string, string> = {
   emblems: t("Emblems"),
   landmass: t("Pure landmass"),
   nodos: "Nodos y mana", // Artae
+  ecologia: "Ecología", // Artae
   geopolitica: "Geopolítica mágica" // Artae
 };
 

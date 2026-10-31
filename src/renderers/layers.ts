@@ -1,5 +1,6 @@
 // Global layers registry: owns layers list, order, and svg skeleton
 
+import { drawFauna } from "@/artae/ecology-view";
 import { drawRealmBorders, eraseRealmBorders } from "@/artae/geopolitics";
 import { drawMana, drawNodes } from "@/artae/nodes";
 import { drawBiomes } from "@/renderers/draw-biomes";
@@ -324,6 +325,7 @@ const mapLayers = [
     attrs: { stroke: "#000", "stroke-width": "0.4", "stroke-opacity": "0.35" },
     draw: drawMana
   }), // Artae: mana of the setting's nodes
+  new Layer({ id: "fauna", parent: "viewbox", draw: drawFauna }), // Artae: ecology snapshot
   new Layer({
     id: "cells",
     parent: "viewbox",

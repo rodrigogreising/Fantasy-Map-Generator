@@ -1,37 +1,146 @@
 {
   "name": "Default",
-  "levels": [1, 20],
+  "levels": [
+    1,
+    20
+  ],
   "levelBase": 2,
-  "texts": { "node": "Node of {a}", "nodePair": "Node of {a} and {b}" },
+  "texts": {
+    "node": "Node of {a}",
+    "nodePair": "Node of {a} and {b}"
+  },
   "grammar": {
     "pair": "{adjective} {noun}",
-    "pure": ["Pure", "Pure"],
+    "pure": [
+      "Pure",
+      "Pure"
+    ],
     "articles": {
-      "m": { "el": "the", "de": "of the", "al": "to the" },
-      "f": { "el": "the", "de": "of the", "al": "to the" }
+      "m": {
+        "el": "the",
+        "de": "of the",
+        "al": "to the"
+      },
+      "f": {
+        "el": "the",
+        "de": "of the",
+        "al": "to the"
+      }
     }
   },
   "elements": [
-    { "name": "Fire", "family": "Matter", "color": "#e0482b", "adjective": ["Fiery", "Fiery"], "rule": "hot*0.8 + volcano*1.2 + desert*hot*0.4" },
-    { "name": "Water", "family": "Matter", "color": "#2f7fd1", "adjective": ["Tidal", "Tidal"], "rule": "water*(0.6 + open*0.4) + wetland*0.7 + flux*0.6" },
-    { "name": "Earth", "family": "Matter", "color": "#8a6a3e", "adjective": ["Stony", "Stony"], "rule": "if(water, 0, 0.4 + elev*(1 - elev)*1.6 + (1 - life)*0.2)" },
-    { "name": "Air", "family": "Matter", "color": "#bfe3e8", "adjective": ["Windy", "Windy"], "rule": "elev*0.8 + (1 - water)*open*(1 - slope)*0.4 + coast*0.2" },
-    { "name": "Ice", "family": "Matter", "color": "#9fd8f0", "adjective": ["Frozen", "Frozen"], "rule": "cold + glacier + polar*0.5" },
-    { "name": "Light", "family": "Spirit", "color": "#ffe58a", "adjective": ["Bright", "Bright"], "rule": "sun*(1 - depth)" },
-    { "name": "Shadow", "family": "Spirit", "color": "#2b2540", "adjective": ["Dark", "Dark"], "rule": "depth + polar" },
-    { "name": "Life", "family": "Spirit", "color": "#6fd36a", "adjective": ["Living", "Living"], "rule": "life + wetland*0.4" }
+    {
+      "name": "Fire",
+      "family": "Matter",
+      "color": "#e0482b",
+      "adjective": [
+        "Fiery",
+        "Fiery"
+      ],
+      "rule": "hot*0.8 + volcano*1.2 + desert*hot*0.4"
+    },
+    {
+      "name": "Water",
+      "family": "Matter",
+      "color": "#2f7fd1",
+      "adjective": [
+        "Tidal",
+        "Tidal"
+      ],
+      "rule": "water*(0.6 + open*0.4) + wetland*0.7 + flux*0.6"
+    },
+    {
+      "name": "Earth",
+      "family": "Matter",
+      "color": "#8a6a3e",
+      "adjective": [
+        "Stony",
+        "Stony"
+      ],
+      "rule": "if(water, 0, 0.4 + elev*(1 - elev)*1.6 + (1 - life)*0.2)"
+    },
+    {
+      "name": "Air",
+      "family": "Matter",
+      "color": "#bfe3e8",
+      "adjective": [
+        "Windy",
+        "Windy"
+      ],
+      "rule": "elev*0.8 + (1 - water)*open*(1 - slope)*0.4 + coast*0.2"
+    },
+    {
+      "name": "Ice",
+      "family": "Matter",
+      "color": "#9fd8f0",
+      "adjective": [
+        "Frozen",
+        "Frozen"
+      ],
+      "rule": "cold + glacier + polar*0.5"
+    },
+    {
+      "name": "Light",
+      "family": "Spirit",
+      "color": "#ffe58a",
+      "adjective": [
+        "Bright",
+        "Bright"
+      ],
+      "rule": "sun*(1 - depth)"
+    },
+    {
+      "name": "Shadow",
+      "family": "Spirit",
+      "color": "#2b2540",
+      "adjective": [
+        "Dark",
+        "Dark"
+      ],
+      "rule": "depth + polar"
+    },
+    {
+      "name": "Life",
+      "family": "Spirit",
+      "color": "#6fd36a",
+      "adjective": [
+        "Living",
+        "Living"
+      ],
+      "rule": "life + wetland*0.4"
+    }
   ],
   "tints": [
-    { "name": "Conquest", "strategy": "conquest", "color": "#b3403a" },
-    { "name": "Kinship", "strategy": "kinship", "color": "#3f9a5a" },
-    { "name": "Artifice", "strategy": "artifice", "color": "#c98a2b" },
-    { "name": "Communion", "strategy": "communion", "color": "#6a5acd" }
+    {
+      "name": "Conquest",
+      "strategy": "conquest",
+      "color": "#b3403a"
+    },
+    {
+      "name": "Kinship",
+      "strategy": "kinship",
+      "color": "#3f9a5a"
+    },
+    {
+      "name": "Artifice",
+      "strategy": "artifice",
+      "color": "#c98a2b"
+    },
+    {
+      "name": "Communion",
+      "strategy": "communion",
+      "color": "#6a5acd"
+    }
   ],
   "kinds": [
     {
       "id": "cult",
       "label": "Cult",
-      "names": ["Cult {de}", "Temple {de}", "Brotherhood {de}"],
+      "names": [
+        "Cult {de}",
+        "Temple {de}",
+        "Brotherhood {de}"
+      ],
       "purpose": {
         "Conquest": "converts other faiths to the worship {de}",
         "Kinship": "keeps pacts with the creatures {de}",
@@ -42,7 +151,11 @@
     {
       "id": "academy",
       "label": "Academy",
-      "names": ["Academy {de}", "College {de}", "School {de}"],
+      "names": [
+        "Academy {de}",
+        "College {de}",
+        "School {de}"
+      ],
       "purpose": {
         "Conquest": "studies {el} by taking its rivals' techniques",
         "Kinship": "teaches {el} in exchange with other schools",
@@ -53,7 +166,11 @@
     {
       "id": "order",
       "label": "Military order",
-      "names": ["Order {de}", "Legion {de}", "Guard {de}"],
+      "names": [
+        "Order {de}",
+        "Legion {de}",
+        "Guard {de}"
+      ],
       "purpose": {
         "Conquest": "conquers with {el}",
         "Kinship": "fights beside the beasts {de}",
@@ -64,7 +181,11 @@
     {
       "id": "guild",
       "label": "Guild",
-      "names": ["Guild {de}", "Workshop {de}", "League {de}"],
+      "names": [
+        "Guild {de}",
+        "Workshop {de}",
+        "League {de}"
+      ],
       "purpose": {
         "Conquest": "absorbs rival workshops and trades {el}",
         "Kinship": "trades the materials {de} with other peoples",
@@ -75,9 +196,17 @@
     {
       "id": "lineage",
       "label": "Noble lineage",
-      "aliases": ["clan", "house", "noble house"],
+      "aliases": [
+        "clan",
+        "house",
+        "noble house"
+      ],
       "rarity": 0.2,
-      "names": ["House {de}", "Lineage {de}", "Clan {de}"],
+      "names": [
+        "House {de}",
+        "Lineage {de}",
+        "Clan {de}"
+      ],
       "purpose": {
         "Conquest": "a family that inherits {el} and grows it by conquest and marriage",
         "Kinship": "a lineage that inherits {el} and keeps it alive through alliances",
@@ -85,5 +214,112 @@
         "Communion": "a clan that inherits {el} and keeps its ancestors' memory as one voice"
       }
     }
-  ]
+  ],
+  "ecology": {
+    "roles": [
+      {
+        "id": "producer",
+        "label": "Producers",
+        "diet": [
+          "mana"
+        ],
+        "eats": 1,
+        "efficiency": 0.6,
+        "levelShare": 0.3,
+        "archetypes": 3,
+        "names": [
+          "Bloom {de}",
+          "Moss {de} of the {biome}",
+          "Grazing-light {de}"
+        ]
+      },
+      {
+        "id": "grazer",
+        "label": "Grazers",
+        "diet": [
+          "producer"
+        ],
+        "eats": 0.4,
+        "efficiency": 0.35,
+        "levelShare": 0.5,
+        "archetypes": 3,
+        "names": [
+          "Herd-beast {de}",
+          "Burrower {de}",
+          "{biome} grazer {de}"
+        ]
+      },
+      {
+        "id": "predator",
+        "label": "Predators",
+        "diet": [
+          "grazer",
+          "producer"
+        ],
+        "eats": 0.35,
+        "efficiency": 0.3,
+        "levelShare": 0.7,
+        "archetypes": 2,
+        "names": [
+          "Stalker {de}",
+          "Hunter {de} of the {biome}"
+        ]
+      },
+      {
+        "id": "apex",
+        "label": "Apex",
+        "diet": [
+          "predator",
+          "grazer"
+        ],
+        "eats": 0.3,
+        "efficiency": 0.3,
+        "levelShare": 0.95,
+        "archetypes": 1,
+        "names": [
+          "Great beast {de}"
+        ]
+      },
+      {
+        "id": "scavenger",
+        "label": "Scavengers",
+        "diet": [
+          "residual"
+        ],
+        "eats": 0.2,
+        "efficiency": 0.4,
+        "levelShare": 0.45,
+        "archetypes": 2,
+        "names": [
+          "Carrion-eater {de}",
+          "Residue-drinker {de}"
+        ]
+      }
+    ],
+    "apex": "apex",
+    "selfSustaining": 0.15,
+    "overlapFloor": 0.35,
+    "bonus": {
+      "age": 2,
+      "competition": 1.5,
+      "richness": 1.5
+    },
+    "notable": [
+      "{name}, the {archetype}"
+    ],
+    "texts": {
+      "layer": "Fauna",
+      "title": "Ecology",
+      "input": "Node budget",
+      "stock": "Standing essence",
+      "residual": "Residual essence",
+      "selfSustaining": "Self-sustaining",
+      "notable": "Notable creature",
+      "fauna": "Fauna",
+      "level": "mean level",
+      "density": "per cell",
+      "cells": "cells",
+      "lvl": "lv"
+    }
+  }
 }

@@ -35,6 +35,42 @@ export interface ProfileKind {
   purpose: Record<string, string>; // one per tint name
 }
 
+/** A trophic role of the ecology snapshot (see src/artae/ecology.ts) */
+export interface ProfileRole {
+  id: string;
+  label: string;
+  diet: string[]; // role ids it eats; "mana" for the node's budget, "residual" for residual essence
+  eats: number; // 0..1: share of its prey's standing energy (or of the residual) it consumes
+  efficiency: number; // 0..1: share of what it consumes it keeps, before the element overlap
+  levelShare: number; // 0..1: typical level as a share of the node's level, before bonuses
+  archetypes: number; // archetypes of this role per node region, 1..3
+  names: string[]; // name patterns with {de}, {el}, {al} (the pair phrase) and {biome}
+}
+
+export interface ProfileEcology {
+  roles: ProfileRole[]; // in feeding order: producers first
+  apex: string; // role id of the region's notable creature
+  selfSustaining: number; // 0..1: share of each population with enough essence of its own to live off the budget
+  overlapFloor: number; // 0..1: assimilation factor between creatures that share no element
+  bonus: { age: number; competition: number; richness: number }; // levels added at most by each factor
+  notable: string[]; // patterns for the notable creature: {name} (a generated proper name) and {archetype}
+  biomes?: Record<string, string>; // the generator's biome names, translated for {biome}
+  texts: {
+    layer: string;
+    title: string;
+    input: string;
+    stock: string;
+    residual: string;
+    selfSustaining: string;
+    notable: string;
+    fauna: string;
+    level: string;
+    density: string;
+    cells: string;
+    lvl: string; // short "level" for labels
+  };
+}
+
 export interface Profile {
   name: string;
   levels: [number, number]; // node level range
@@ -49,6 +85,7 @@ export interface Profile {
   tints: ProfileTint[];
   kinds: ProfileKind[];
   finder?: [string, string?]; // the pair the node finder opens on, by element names
+  ecology?: ProfileEcology; // the static ecology snapshot; the default profile's is used when a setting has none
 }
 
 const defaultProfile = defaultJson as unknown as Profile;
@@ -57,6 +94,9 @@ let currentSetting: string | undefined;
 const listeners = new Set<(profile: Profile) => void>();
 
 export const profile = (): Profile => current;
+
+/** The ecology parameters of the profile in use, falling back to the default profile's */
+export const ecologyProfile = (): ProfileEcology => current.ecology ?? (defaultProfile.ecology as ProfileEcology);
 
 /** Run a function now and whenever the profile changes */
 export function onProfile(listener: (profile: Profile) => void): void {

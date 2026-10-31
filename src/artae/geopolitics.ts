@@ -2,7 +2,8 @@
 // borders for the "geopolitica" preset, the realm hover tip and an overview dialog
 import { hsl, rgb } from "d3";
 import { ELEMENTS } from "@/artae/elements";
-import { cachedField, manaTip, nodes } from "@/artae/nodes";
+import { cachedField, findNode, manaTip, nodes } from "@/artae/nodes";
+import { profile } from "@/artae/profile";
 import { Pack } from "@/model/graph/pack-generator";
 import { Layers } from "@/renderers/layers";
 import { Dialog } from "@/ui/dialog/dialog";
@@ -112,16 +113,29 @@ export function realmTip(cellId: number, gridCellId: number): string {
 }
 
 /** Realms sorted by node count, then by their strongest node */
+/** A realm's power: the mana of the nodes it holds added as powers of the profile's base (Σ base^level), the
+ * measure of how many high-level fighters it can field; `poderNivel` is the same as a single level */
+export function realmPower(realm: RealmProfile): number {
+  const base = profile().levelBase;
+  return realm.nodes.reduce((sum, id) => sum + base ** (findNode(id)?.node.level ?? 0), 0);
+}
+
 export function geopoliticsTable() {
+  const base = profile().levelBase;
   return [...realms().values()]
-    .sort((a, b) => b.nodes.length - a.nodes.length || b.maxLevel - a.maxLevel)
-    .map(realm => ({
-      realm: realm.name,
-      nodes: realm.nodes.length,
-      maxLevel: realm.maxLevel,
-      levels: realm.levelSum,
-      top: topElements(realm)
-    }));
+    .sort((a, b) => realmPower(b) - realmPower(a))
+    .map(realm => {
+      const poder = realmPower(realm);
+      return {
+        realm: realm.name,
+        nodes: realm.nodes.length,
+        maxLevel: realm.maxLevel,
+        levels: realm.levelSum,
+        poder: Math.round(poder),
+        poderNivel: poder > 0 ? Math.round((Math.log(poder) / Math.log(base)) * 10) / 10 : 0,
+        top: topElements(realm)
+      };
+    });
 }
 
 const escapeText = (text: string) => text.replace(/[&<>"]/g, char => `&#${char.charCodeAt(0)};`);

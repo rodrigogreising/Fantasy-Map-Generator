@@ -45,6 +45,7 @@ const DEFAULT_PRESETS: Record<string, LayerId[]> = {
   emblems: ["borders", "burgIcons", "emblems", "ice", "lakes", "rivers", "routes", "scaleBar", "states", "vignette"],
   landmass: ["scaleBar"],
   nodos: ["coordinates", "elements", "lakes", "nodes", "rivers", "scaleBar", "vignette"], // Artae
+  ecologia: ["biomes", "coordinates", "fauna", "lakes", "nodes", "rivers", "scaleBar", "vignette"], // Artae
   geopolitica: [
     "burgIcons", // Artae: towns open the burg editor, with their institutions
     "coordinates",

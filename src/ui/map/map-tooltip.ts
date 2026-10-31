@@ -42,7 +42,7 @@ export function handleMouseMove(event: MouseEvent | TouchEvent): void {
 
   const gridCellId = Grid.findCell(point[0], point[1]);
   // Artae: the mana panel replaces text tips for the Mana and Fronteras layers
-  if (Layers.isOn("elements") || Layers.isOn("realmBorders")) {
+  if (Layers.isOn("elements") || Layers.isOn("realmBorders") || Layers.isOn("fauna")) {
     const nodeElement = (event.target as Element | null)?.closest?.("#artaeNodes [id^='artaeNode']");
     updateManaPanel(cellId, gridCellId, nodeElement ? Number(nodeElement.id.replace("artaeNode", "")) : undefined);
   } else hideManaPanel();
@@ -305,7 +305,7 @@ function getGoodsTip(target: SVGElement, cellId: number): string | undefined {
 /** Show the value of the active data layer in the hovered cell */
 function showLayerTip(point: Point, cellId: number, gridCellId: number, isLand: boolean): void {
   const { cells } = pack;
-  if (Layers.isOn("elements") || Layers.isOn("realmBorders")) return; // Artae: shown in the mana panel
+  if (Layers.isOn("elements") || Layers.isOn("realmBorders") || Layers.isOn("fauna")) return; // Artae: mana panel
   if (Layers.isOn("precipitation") && isLand)
     return void tip(t("Annual Precipitation: {{value}}", { value: getFriendlyPrecipitation(cellId, pack, grid) }));
   if (Layers.isOn("population")) return void tip(getPopulationTip(cellId));

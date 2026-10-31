@@ -1,5 +1,6 @@
 import Alea from "alea";
 import { max } from "d3";
+import { manaOnPack } from "@/artae/geopolitics-costs";
 import { isMarineState } from "@/artae/marine-realms";
 import type { Label } from "@/model/annotations/labels-generator";
 import { Pack } from "@/model/graph/pack-generator";
@@ -38,6 +39,8 @@ export interface Province {
   note?: string;
   tags?: string[];
 }
+
+const DISTRICT_MIN_CELLS = 12; // Artae: a node region a realm holds only a sliver of is no district of its own
 
 class ProvinceModule {
   forms: Record<string, Record<string, number>> = {
@@ -113,64 +116,68 @@ class ProvinceModule {
       });
     }
 
+    // Artae: with nodes on the map, provinces are node districts: one per node region a realm holds
+    const districts = this.nodeDistricts(provinces, provinceIds, isStateKept);
+
     const provincesRatio = options.generation.provinces.ratio;
     const maxGrowth = provincesRatio === 100 ? 1000 : gauss(20, 5, 5, 100) * provincesRatio ** 0.5; // max growth
 
     // generate provinces for selected burgs
-    states.forEach(s => {
-      s.provinces = [];
-      if (!s.i || s.removed) return;
-      if (provinces.length) s.provinces = provinces.filter(p => p.state === s.i).map(p => p.i); // locked provinces ids
-      if (isStateKept(s.i)) return;
+    if (!districts)
+      states.forEach(s => {
+        s.provinces = [];
+        if (!s.i || s.removed) return;
+        if (provinces.length) s.provinces = provinces.filter(p => p.state === s.i).map(p => p.i); // locked provinces ids
+        if (isStateKept(s.i)) return;
 
-      const stateBurgs = burgs
-        .filter(b => b.state === s.i && !b.removed && !provinceIds[b.cell]) // burgs in this state without province assigned
-        .map(burg => ({ burg: burg, score: burg.population! * gauss(1, 0.2, 0.5, 1.5, 3) }))
-        .sort((a, b) => b.burg.capital! - a.burg.capital! || b.score - a.score) // capitals first, biggest population next
-        .map(b => b.burg);
-      if (stateBurgs.length < 2) return; // at least 2 provinces are required
+        const stateBurgs = burgs
+          .filter(b => b.state === s.i && !b.removed && !provinceIds[b.cell]) // burgs in this state without province assigned
+          .map(burg => ({ burg: burg, score: burg.population! * gauss(1, 0.2, 0.5, 1.5, 3) }))
+          .sort((a, b) => b.burg.capital! - a.burg.capital! || b.score - a.score) // capitals first, biggest population next
+          .map(b => b.burg);
+        if (stateBurgs.length < 2) return; // at least 2 provinces are required
 
-      const provincesNumber = Math.max(Math.ceil((stateBurgs.length * provincesRatio) / 100), 2);
-      const form = Object.assign({}, this.forms[s.form!]);
+        const provincesNumber = Math.max(Math.ceil((stateBurgs.length * provincesRatio) / 100), 2);
+        const form = Object.assign({}, this.forms[s.form!]);
 
-      for (let i = 0; i < provincesNumber; i++) {
-        const provinceId = provinces.length;
-        const center = stateBurgs[i].cell;
-        const burg = stateBurgs[i];
-        const c = stateBurgs[i].culture!;
-        const nameByBurg = P(0.5);
-        const name = nameByBurg ? stateBurgs[i].name! : Names.getState(Names.getCultureShort(c), c);
-        const formName = rw(form);
-        form[formName] += 10;
-        const fullName = `${name} ${formName}`;
-        const color = getMixedColor(s.color!);
-        const kinship = nameByBurg ? 0.8 : 0.4;
-        const type = Burgs.getType(center, burg.port);
-        const coa = Emblems.generate(stateBurgs[i].coa, kinship, null, type);
-        coa.shield = Emblems.getShield(c, s.i);
+        for (let i = 0; i < provincesNumber; i++) {
+          const provinceId = provinces.length;
+          const center = stateBurgs[i].cell;
+          const burg = stateBurgs[i];
+          const c = stateBurgs[i].culture!;
+          const nameByBurg = P(0.5);
+          const name = nameByBurg ? stateBurgs[i].name! : Names.getState(Names.getCultureShort(c), c);
+          const formName = rw(form);
+          form[formName] += 10;
+          const fullName = `${name} ${formName}`;
+          const color = getMixedColor(s.color!);
+          const kinship = nameByBurg ? 0.8 : 0.4;
+          const type = Burgs.getType(center, burg.port);
+          const coa = Emblems.generate(stateBurgs[i].coa, kinship, null, type);
+          coa.shield = Emblems.getShield(c, s.i);
 
-        s.provinces.push(provinceId);
-        provinces.push({
-          i: provinceId,
-          state: s.i,
-          center,
-          burg: burg.i!,
-          name,
-          formName,
-          fullName,
-          color,
-          coa,
-          tags: []
-        });
-      }
-    });
+          s.provinces.push(provinceId);
+          provinces.push({
+            i: provinceId,
+            state: s.i,
+            center,
+            burg: burg.i!,
+            name,
+            formName,
+            fullName,
+            color,
+            coa,
+            tags: []
+          });
+        }
+      });
 
     // expand generated provinces
     const queue = new FlatQueue<{ e: number; province: number; state: number; p: number }>();
     const cost: number[] = [];
 
     provinces.forEach(p => {
-      if (!p.i || p.removed || isProvinceLocked(p)) return;
+      if (districts || !p.i || p.removed || isProvinceLocked(p)) return; // Artae: districts are already laid out
       provinceIds[p.center] = p.i;
       queue.push({ e: p.center, province: p.i, state: p.state, p: 0 }, 0);
       cost[p.center] = 1;
@@ -347,6 +354,89 @@ class ProvinceModule {
   }
 
   /** Rename a province; a custom full name or label keeps its pattern when the old name stands in it as a whole word */
+  /** Artae: every node region a realm holds (its core, or a fair share of its cells) becomes a district, seated at the
+   * node, with the realm's town nearest the node as its burg; scraps of a realm outside any district join the nearest
+   * district of the same realm. Returns false when the map has no nodes, so provinces are generated as usual */
+  private nodeDistricts(
+    provinces: Province[],
+    provinceIds: Uint16Array,
+    isStateKept: (stateId: number) => boolean | undefined
+  ): boolean {
+    const mana = manaOnPack();
+    if (!mana) return false;
+    const { cells, states, burgs } = pack;
+    const regionCells = new Map<string, number[]>(); // "state:region" → cells
+    for (const i of cells.i) {
+      const state = cells.state[i];
+      const region = mana.region(i);
+      if (!state || region < 0 || isStateKept(state) || provinceIds[i]) continue;
+      const key = `${state}:${region}`;
+      const list = regionCells.get(key);
+      if (list) list.push(i);
+      else regionCells.set(key, [i]);
+    }
+
+    states.forEach(s => {
+      s.provinces = s.i ? provinces.filter(p => p.state === s.i).map(p => p.i) : [];
+    });
+    const forms = new Map<number, Record<string, number>>();
+    for (const [key, list] of regionCells) {
+      const [stateId, region] = key.split(":").map(Number);
+      const s = states[stateId];
+      const core = mana.nodeCell(region);
+      const holdsCore = core >= 0 && cells.state[core] === stateId;
+      if (!holdsCore && list.length < DISTRICT_MIN_CELLS) continue; // a scrap: joins a neighbour district below
+      const [nx, ny] = holdsCore ? cells.p[core] : cells.p[list[0]];
+      const burgId = list
+        .filter(i => cells.burg[i] && !burgs[cells.burg[i]].removed)
+        .map(i => cells.burg[i])
+        .sort((a, b) => Math.hypot(burgs[a].x - nx, burgs[a].y - ny) - Math.hypot(burgs[b].x - nx, burgs[b].y - ny))[0];
+      const center = holdsCore ? core : burgId ? burgs[burgId].cell : list[0];
+      const culture = cells.culture[center] || s.culture!;
+      const form = forms.get(stateId) ?? Object.assign({}, this.forms[s.form!] ?? this.forms.Wild);
+      forms.set(stateId, form);
+      const formName = rw(form);
+      form[formName] += 10;
+      const name = burgId && P(0.5) ? burgs[burgId].name! : Names.getState(Names.getCultureShort(culture), culture);
+      const coa = Emblems.generate(
+        burgId ? burgs[burgId].coa : s.coa,
+        0.6,
+        null,
+        Burgs.getType(center, burgId ? burgs[burgId].port : 0)
+      );
+      coa.shield = Emblems.getShield(culture, stateId);
+      const provinceId = provinces.length;
+      for (const i of list) provinceIds[i] = provinceId;
+      provinces.push({
+        i: provinceId,
+        state: stateId,
+        center,
+        burg: burgId ?? 0,
+        name,
+        formName,
+        fullName: `${name} ${formName}`,
+        color: getMixedColor(s.color!),
+        coa,
+        tags: []
+      });
+      s.provinces!.push(provinceId);
+    }
+
+    // scraps join the district of their realm they touch most, spreading out from the districts
+    let frontier = cells.i.filter(i => provinceIds[i]);
+    while (frontier.length) {
+      const next: number[] = [];
+      for (const i of frontier)
+        for (const n of cells.c[i])
+          if (!provinceIds[n] && cells.state[n] && cells.state[n] === cells.state[i] && !isStateKept(cells.state[n])) {
+            provinceIds[n] = provinceIds[i];
+            next.push(n);
+          }
+      frontier = next;
+    }
+    return true;
+  }
+
   rename(provinceId: number, name: string): void {
     const province = pack.provinces[provinceId];
     if (!province || province.removed) throw new Error(`Province ${provinceId} does not exist`);

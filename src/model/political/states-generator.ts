@@ -1,6 +1,13 @@
 import Alea from "alea";
 import { mean, median, quadtree, sum } from "d3";
-import { MARINE_REALMS, manaOnPack, NODE_WEIGHTS } from "@/artae/geopolitics-costs";
+import {
+  MARINE_REALMS,
+  manaOnPack,
+  NODE_WEIGHTS,
+  type PackMana,
+  realmMight,
+  seatNear
+} from "@/artae/geopolitics-costs";
 import { isLandReach, isMarineReach, MARINE_TYPE } from "@/artae/marine";
 import { isMarineCulture, isMarineState } from "@/artae/marine-realms";
 import { nodes } from "@/artae/nodes";
@@ -483,12 +490,86 @@ class StatesModule {
       });
     }
 
+    if (mana) this.settleOnNodes(mana, canHold);
+
     burgs
       .filter(b => b.i && !b.removed)
       .forEach(b => {
         b.state = cells.state[b.cell]; // assign state to burgs
       });
     log.timeEnd("expandStates");
+  }
+
+  /** Artae: nodes are the seats of power. A node's whole region goes to the realm holding its core (or a capital
+   * in it), so borders run between nodes, never through one; then each realm's capital moves to the strongest node
+   * it holds, since the realm is led from its biggest node */
+  private settleOnNodes(mana: PackMana, canHold: (cell: number, marine: boolean) => boolean): void {
+    const { cells, states, burgs } = pack;
+    const count = nodes().length;
+    const regionOwner = new Int32Array(count);
+    for (let region = 0; region < count; region++) {
+      const core = mana.nodeCell(region);
+      regionOwner[region] = core >= 0 ? cells.state[core] : 0;
+    }
+    for (const state of states) {
+      if (!state.i || state.removed) continue;
+      const region = mana.region(burgs[state.capital].cell);
+      if (region >= 0) regionOwner[region] = state.i; // a capital keeps its own region whoever holds the core
+    }
+    // a capital the canon pinned to its node outranks any other claim on that region
+    const pinned = new Set<number>();
+    for (const state of states) {
+      if (!state.i || state.removed || !burgs[state.capital]?.artae) continue;
+      const region = mana.region(burgs[state.capital].cell);
+      if (region < 0) continue;
+      regionOwner[region] = state.i;
+      pinned.add(region);
+    }
+    for (const i of cells.i) {
+      const region = mana.region(i);
+      const owner = region >= 0 ? regionOwner[region] : 0;
+      const current = cells.state[i];
+      if (!owner || !current || owner === current) continue; // wilderness stays wild
+      if (states[current].lock || states[owner].lock) continue;
+      if (cells.burg[i] && burgs[cells.burg[i]].capital) continue;
+      if (!canHold(i, isMarineState(owner))) continue;
+      cells.state[i] = owner;
+    }
+
+    for (const state of states) {
+      if (!state.i || state.removed || state.lock) continue;
+      const capital = burgs[state.capital];
+      if (capital.artae) continue; // a canon capital stays where the canon put it
+      let strongest = -1;
+      for (let region = 0; region < count; region++) {
+        if (regionOwner[region] !== state.i || mana.nodeCell(region) < 0) continue;
+        if (pinned.has(region) && !capital.artae) continue;
+        if (cells.state[mana.nodeCell(region)] !== state.i) continue;
+        if (strongest < 0 || mana.nodeLevel(region) > mana.nodeLevel(strongest)) strongest = region;
+      }
+      if (strongest < 0) continue;
+      const marine = isMarineState(state.i);
+      const seat = seatNear(
+        mana,
+        strongest,
+        cell =>
+          cells.state[cell] === state.i &&
+          cells.h[cell] < 20 === marine &&
+          (!cells.burg[cell] || !burgs[cells.burg[cell]].capital || cells.burg[cell] === capital.i)
+      );
+      if (seat === undefined || seat === capital.cell) continue;
+      const town = cells.burg[seat] ? burgs[cells.burg[seat]] : undefined;
+      const from = capital.cell;
+      if (town) {
+        town.cell = from;
+        [town.x, town.y] = cells.p[from];
+        cells.burg[from] = town.i;
+      } else cells.burg[from] = 0;
+      capital.cell = seat;
+      [capital.x, capital.y] = cells.p[seat];
+      cells.burg[seat] = capital.i;
+      state.center = seat;
+    }
   }
 
   normalize() {
@@ -659,6 +740,8 @@ class StatesModule {
       return; // no states to generate relations with
     }
     const areaMean: number = mean(valid.map(s => stateAreas[s.i])) as number; // average state area
+    const might = realmMight(states.length); // Artae: node might per realm, when the map has nodes
+    const mightMean = might ? (mean(valid.map(s => might[s.i])) as number) : 0;
 
     // generic relations
     for (let f = 1; f < states.length; f++) {
@@ -698,8 +781,16 @@ class StatesModule {
 
         let status = naval ? rw(navals) : neib ? rw(neibs) : neibOfNeib ? rw(neibsOfNeibs) : rw(far);
 
-        // add Vassal
-        if (neib && P(0.8) && stateAreas[f] > areaMean && stateAreas[t] < areaMean && stateAreas[f] / stateAreas[t] > 2)
+        // add Vassal; Artae: with nodes on the map, the measure is the might of the nodes a realm holds, not its area
+        const measure = might ?? stateAreas;
+        const measureMean = might ? mightMean : areaMean;
+        if (
+          neib &&
+          P(0.8) &&
+          measure[f] > measureMean &&
+          measure[t] < measureMean &&
+          measure[f] / (measure[t] || 1) > 2
+        )
           status = "Vassal";
         states[f].diplomacy![t] = status === "Vassal" ? "Suzerain" : status;
         states[t].diplomacy![f] = status;

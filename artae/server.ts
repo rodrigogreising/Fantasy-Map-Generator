@@ -104,7 +104,8 @@ function seedFor(map: string) {
           ...base,
           culture: text(entry.culture),
           capital: entry.capital === true,
-          near: checkElements(article.id, list(entry.near))
+          near: checkElements(article.id, list(entry.near)),
+          node: checkElements(article.id, list(entry.node))
         });
       else if (entry.as === "institution")
         seed.institutions.push({

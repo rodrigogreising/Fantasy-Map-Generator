@@ -2,7 +2,8 @@
 // the map (cultures, states, burgs; see the map skill) always appear, named as the canon names them, where their
 // elements are strong. Canon-made entities carry `artae: <canon id>` so anchors survive regeneration
 import { ELEMENTS } from "@/artae/elements";
-import { affinity, elementLevels, nodes } from "@/artae/nodes";
+import { affinity, elementLevels, nodes, type SystemNode } from "@/artae/nodes";
+import { Pack } from "@/model/graph/pack-generator";
 import type { Burg } from "@/model/political/burgs-generator";
 import type { State } from "@/model/political/states-generator";
 import { CULTURE_TYPES, type Culture, type CultureType } from "@/model/society/cultures-generator";
@@ -43,6 +44,7 @@ interface SeedBurg {
   culture?: string;
   capital: boolean;
   near: string[];
+  node?: string[]; // pinned to the strongest node of this ordered pair: the nearest town to it
 }
 export interface Seed {
   map: string;
@@ -168,7 +170,11 @@ export function applyCanonCultures(): void {
       );
     const candidates: number[] = [];
     for (const i of ranked) if (candidates.length < CANDIDATES && far(i)) candidates.push(i);
-    const center = pick(candidates.length ? candidates : ranked.slice(0, CANDIDATES));
+    // a culture whose canon city is pinned to a node grows from that node
+    const pinned = pairNode(pinnedOf(canon.id)?.node);
+    const center = pinned
+      ? nearestCell(pinned.x, pinned.y, i => cells.s[i] > 0 && cells.h[i] < 20 === marine && !cells.burg[i])
+      : pick(candidates.length ? candidates : ranked.slice(0, CANDIDATES));
     if (center === undefined) {
       report.push(`${canon.id}: no cell for it`);
       continue;
@@ -187,6 +193,43 @@ export function applyCanonCultures(): void {
     report.push(`culture ${canon.id} → culture:${slot.i} at cell ${center}`);
   }
 }
+
+/** The strongest node of an ordered pair, or else the strongest holding both elements */
+function pairNode(names: string[] | undefined): SystemNode | undefined {
+  const [a, b = a] = elementIndex(names ?? []);
+  if (a === undefined) return undefined;
+  const byLevel = (x: SystemNode, y: SystemNode) => y.node.level - x.node.level;
+  const list = nodes();
+  return (
+    list.filter(({ node }) => node.primary === a && node.secondary === b).sort(byLevel)[0] ??
+    list
+      .filter(({ node }) => [node.primary, node.secondary].includes(a) && [node.primary, node.secondary].includes(b))
+      .sort(byLevel)[0]
+  );
+}
+
+/** The cell nearest a point, among those that pass `fits` (searched outwards from the point's cell) */
+function nearestCell(x: number, y: number, fits: (cell: number) => boolean): number | undefined {
+  const { cells } = pack;
+  const start = Pack.findCell(x, y);
+  if (start === undefined) return undefined;
+  const seen = new Set([start]);
+  let ring = [start];
+  while (ring.length) {
+    const found = ring.filter(fits);
+    if (found.length)
+      return found.sort(
+        (p, q) => Math.hypot(cells.p[p][0] - x, cells.p[p][1] - y) - Math.hypot(cells.p[q][0] - x, cells.p[q][1] - y)
+      )[0];
+    const next: number[] = [];
+    for (const cell of ring) for (const n of cells.c[cell]) if (!seen.has(n)) seen.add(n), next.push(n);
+    ring = next;
+  }
+  return undefined;
+}
+
+/** Canon burgs of a culture pinned to a node */
+const pinnedOf = (cultureId: string) => seed.burgs.find(b => b.culture === cultureId && b.node?.length);
 
 const cultureOf = (canonId: string | undefined) =>
   canonId ? pack.cultures.find(c => c.artae === canonId && !c.removed) : undefined;
@@ -261,12 +304,41 @@ export function applyCanonBurgs(): void {
       ? burgs.find(b => b.capital && claimed.has(b) && cells.culture[b.cell] === culture.i && !b.artae)
       : (burgs.find(b => !b.capital && !b.artae && cells.culture[b.cell] === culture.i) ??
         burgs.filter(b => !b.capital && !b.artae)[0]);
-    const cell = burg && bestCell(culture, near, burg);
+    const node = pairNode(canon.node);
+    const marine = culture.type === "Marine";
+    let cell: number | undefined;
+    if (burg && node) {
+      // the cell nearest the node itself: whoever stands there makes way
+      cell = nearestCell(
+        node.x,
+        node.y,
+        i => cells.s[i] > 0 && cells.h[i] < 20 === marine && !burgs.some(b => b.cell === i && b.artae)
+      );
+      const occupant =
+        cell !== undefined && cells.burg[cell] && cells.burg[cell] !== burg.i
+          ? pack.burgs[cells.burg[cell]]
+          : undefined;
+      if (occupant) {
+        const water = cells.h[occupant.cell] < 20;
+        const away = nearestCell(
+          occupant.x,
+          occupant.y,
+          i => !cells.burg[i] && cells.s[i] > 0 && cells.h[i] < 20 === water && i !== cell
+        );
+        if (away !== undefined) move(occupant, away);
+        else cell = undefined;
+      }
+    } else if (burg) cell = bestCell(culture, near, burg);
     if (!burg || cell === undefined) {
       report.push(`burg ${canon.id}: no place for it`);
       continue;
     }
     move(burg, cell);
+    if (node) {
+      cells.culture[cell] = culture.i;
+      burg.culture = culture.i;
+      clearAround(node, burg, burgs);
+    }
     burg.name = canon.title;
     burg.artae = canon.id;
     claimed.add(burg);
@@ -274,8 +346,55 @@ export function applyCanonBurgs(): void {
   }
 }
 
+/** A burg pinned to a node is the nearest town to it: any other burg as close or closer moves a little further out */
+function clearAround(node: SystemNode, pinned: Burg, burgs: Burg[]): void {
+  const { cells } = pack;
+  const distance = (x: number, y: number) => Math.hypot(x - node.x, y - node.y);
+  const reach = distance(pinned.x, pinned.y);
+  for (const other of burgs) {
+    if (other === pinned || other.removed || distance(other.x, other.y) > reach) continue;
+    const water = cells.h[other.cell] < 20;
+    const cell = nearestCell(
+      other.x,
+      other.y,
+      i =>
+        !cells.burg[i] &&
+        cells.s[i] > 0 &&
+        cells.h[i] < 20 === water &&
+        distance(cells.p[i][0], cells.p[i][1]) > reach * 1.5 + 1
+    );
+    if (cell !== undefined) move(other, cell);
+  }
+}
+
+/** Later steps may set a town down closer to a pinned node than its canon city: the two swap places */
+function keepPinned(): void {
+  const { cells } = pack;
+  for (const canon of seed.burgs) {
+    const node = pairNode(canon.node);
+    const pinned = node && pack.burgs.find(b => b.i && !b.removed && b.artae === canon.id);
+    if (!node || !pinned) continue;
+    const distance = (b: Burg) => Math.hypot(b.x - node.x, b.y - node.y);
+    const closer = pack.burgs
+      .filter(b => b.i && !b.removed && b !== pinned && distance(b) < distance(pinned))
+      .sort((a, b) => distance(a) - distance(b))[0];
+    if (!closer) continue;
+    const [cellA, xA, yA] = [pinned.cell, pinned.x, pinned.y];
+    [pinned.cell, pinned.x, pinned.y] = [closer.cell, closer.x, closer.y];
+    [closer.cell, closer.x, closer.y] = [cellA, xA, yA];
+    cells.burg[pinned.cell] = pinned.i;
+    cells.burg[closer.cell] = closer.i;
+    if (pinned.capital) {
+      const state = pack.states[pinned.state ?? 0];
+      if (state?.capital === pinned.i) state.center = pinned.cell;
+    }
+    report.push(`burg ${canon.id}: swapped with ${closer.name} to stay nearest its node`);
+  }
+}
+
 /** After the state forms: the realm of each canon state's culture takes the canon name */
 export function applyCanonStates(): void {
+  keepPinned();
   for (const canon of seed.states) {
     const culture = cultureOf(canon.culture);
     const ofCulture = (s: State) => !s.artae && pack.cells.culture[pack.burgs[s.capital].cell] === culture?.i;

@@ -16,6 +16,7 @@ export const LAYER_TOGGLES = new Map<LayerId, LayerButton>([
   ["biomes", { label: t("Biomes"), shortcut: "KeyB" }],
   ["elements", { label: "Mana" }], // Artae
   ["nodes", { label: "Nodos" }], // Artae
+  ["fauna", { label: "Fauna" }], // Artae
   ["realmBorders", { label: "Fronteras" }], // Artae
   ["cells", { label: t("Cells"), shortcut: "KeyE" }],
   ["grid", { label: t("Grid"), shortcut: "Semicolon", hint: `; (${t("semicolon")})` }],
