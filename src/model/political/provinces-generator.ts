@@ -1,5 +1,6 @@
 import Alea from "alea";
 import { max } from "d3";
+import { isMarineState } from "@/artae/marine-realms";
 import type { Label } from "@/model/annotations/labels-generator";
 import { Pack } from "@/model/graph/pack-generator";
 import { Emblems } from "@/model/political/emblems-generator";
@@ -182,14 +183,16 @@ class ProvinceModule {
         if (isProvinceCellLocked(e)) return; // do not overwrite cell of locked provinces
 
         const land = cells.h[e] >= 20;
-        if (!land && !cells.t[e]) return; // cannot pass deep ocean
-        if (land && cells.state[e] !== state) return;
-        const evevation = cells.h[e] >= 70 ? 100 : cells.h[e] >= 50 ? 30 : cells.h[e] >= 20 ? 10 : 100;
+        const marine = isMarineState(state); // Artae: sea realms hold and cross the sea
+        const owned = cells.state[e] === state;
+        if (!land && !marine && !cells.t[e]) return; // cannot pass deep ocean
+        if (land && !owned) return;
+        const evevation = cells.h[e] >= 70 ? 100 : cells.h[e] >= 50 ? 30 : cells.h[e] >= 20 ? 10 : marine ? 10 : 100;
         const totalCost = p + evevation;
 
         if (totalCost > maxGrowth) return;
         if (!cost[e] || totalCost < cost[e]) {
-          if (land) provinceIds[e] = province; // assign province to a cell
+          if (owned && (land || marine || cells.t[e] === -1)) provinceIds[e] = province; // assign province to a cell
           cost[e] = totalCost;
           queue.push({ e, province, state, p: totalCost }, totalCost);
         }
@@ -233,7 +236,10 @@ class ProvinceModule {
         return spliced[0] ? `New ${spliced[0]}` : null;
       };
 
-      let stateNoProvince = noProvince.filter(i => cells.state[i] === s.i && !provinceIds[i]);
+      const marine = isMarineState(s.i); // Artae
+      // Artae: a sea realm without towns centres its wild provinces on its richest waters
+      const byScore = (cellIds: number[]) => (marine ? [...cellIds].sort((a, b) => cells.s[b] - cells.s[a]) : cellIds);
+      let stateNoProvince = byScore(noProvince.filter(i => cells.state[i] === s.i && !provinceIds[i]));
       while (stateNoProvince.length) {
         // add new province
         const provinceId = provinces.length;
@@ -253,13 +259,14 @@ class ProvinceModule {
           cells.c[e].forEach(nextCellId => {
             if (provinceIds[nextCellId]) return;
             const land = cells.h[nextCellId] >= 20;
-            if (cells.state[nextCellId] && cells.state[nextCellId] !== s.i) return;
-            const ter = land ? (cells.state[nextCellId] === s.i ? 3 : 20) : cells.t[nextCellId] ? 10 : 30;
+            const owned = cells.state[nextCellId] === s.i;
+            if (cells.state[nextCellId] && !owned) return;
+            const ter = land || (marine && owned) ? (owned ? 3 : 20) : cells.t[nextCellId] ? 10 : 30; // Artae: own sea is home
             const totalCost = p + ter;
 
             if (totalCost > maxGrowth) return;
             if (!cost[nextCellId] || totalCost < cost[nextCellId]) {
-              if (land && cells.state[nextCellId] === s.i) provinceIds[nextCellId] = provinceId; // assign province to a cell
+              if (owned) provinceIds[nextCellId] = provinceId; // assign province to a cell; Artae: own sea too
               cost[nextCellId] = totalCost;
               queue.push({ e: nextCellId, p: totalCost }, totalCost);
             }
@@ -314,7 +321,7 @@ class ProvinceModule {
 
         // check if there is a land way within the same state between two cells
         function isPassable(from: number, to: number) {
-          if (cells.f[from] !== cells.f[to]) return false; // on different islands
+          if (!marine && cells.f[from] !== cells.f[to]) return false; // on different islands
           const passableQueue = [from],
             used = new Uint8Array(cells.i.length),
             state = cells.state[from];
@@ -322,7 +329,7 @@ class ProvinceModule {
             const current = passableQueue.pop() as number;
             if (current === to) return true; // way is found
             cells.c[current].forEach(c => {
-              if (used[c] || cells.h[c] < 20 || cells.state[c] !== state) return;
+              if (used[c] || (!marine && cells.h[c] < 20) || cells.state[c] !== state) return; // Artae: sea realms pass by sea
               passableQueue.push(c);
               used[c] = 1;
             });
@@ -331,7 +338,7 @@ class ProvinceModule {
         }
 
         // re-check
-        stateNoProvince = noProvince.filter(i => cells.state[i] === s.i && !provinceIds[i]);
+        stateNoProvince = byScore(noProvince.filter(i => cells.state[i] === s.i && !provinceIds[i]));
       }
     });
 
@@ -408,8 +415,8 @@ class ProvinceModule {
   add(x: number, y: number): number {
     const { cells, provinces, states, burgs } = pack;
     const center = Pack.requireCell(x, y);
-    if (cells.h[center] < 20) throw new Error("A province cannot be placed in the water");
     const state = cells.state[center];
+    if (cells.h[center] < 20 && !isMarineState(state)) throw new Error("A province cannot be placed in the water"); // Artae
     if (!state) throw new Error("A province cannot be placed in neutral lands; give them to a state first");
     const isCenter = (cell: number) => provinces.some(p => p.i && !p.removed && p.center === cell);
     if (isCenter(center)) throw new Error(`Cell ${center} is already a province center`);
@@ -433,7 +440,8 @@ class ProvinceModule {
 
     cells.province[center] = i;
     for (const cell of cells.c[center])
-      if (cells.h[cell] >= 20 && cells.state[cell] === state && !isCenter(cell)) cells.province[cell] = i;
+      if ((cells.h[cell] >= 20 || isMarineState(state)) && cells.state[cell] === state && !isCenter(cell))
+        cells.province[cell] = i; // Artae: sea realms take sea cells
     this.getPoles();
     return i;
   }
@@ -514,7 +522,8 @@ class ProvinceModule {
     if (!Array.isArray(cellIds) || !cellIds.length) throw new Error("Name at least one cell");
     for (const cell of cellIds) {
       if (!Number.isInteger(cell) || cell < 0 || cell >= cells.i.length) throw new Error(`Cell ${cell} does not exist`);
-      if (cells.h[cell] < 20) throw new Error(`Cell ${cell} is water; provinces hold land only`);
+      if (cells.h[cell] < 20 && !isMarineState(province.state) && cells.t[cell] !== -1)
+        throw new Error(`Cell ${cell} is water; provinces of land realms hold land and the coastal sea only`); // Artae
       if (cells.state[cell] !== province.state)
         throw new Error(`Cell ${cell} is not in state ${province.state}; give it to the state first`);
       const owner = cells.province[cell];

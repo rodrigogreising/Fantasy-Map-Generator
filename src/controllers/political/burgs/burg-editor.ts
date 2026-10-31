@@ -1,4 +1,5 @@
 import { type Selection, select } from "d3";
+import { renderTownInstitutions } from "@/artae/institutions-panel";
 import { Controllers } from "@/controllers";
 import { Goods } from "@/model/economy/goods-generator";
 import type { Market } from "@/model/economy/markets-generator";
@@ -219,6 +220,11 @@ function renderDialog(): void {
           ></div>
         </div>
       </div>
+      <!-- Artae: institutions of the setting's element pairs -->
+      <details id="burgInstitutionsSection" open style="margin: 0.2em 0 0.4em; max-width: 46em">
+        <summary class="pointer">Instituciones</summary>
+        <div id="burgInstitutions" style="max-height: 18em; overflow: auto; padding-right: 0.3em"></div>
+      </details>
       <div id="burgBottom">
         <button id="burgStyleShow" data-tip="${t("Show")}" class="icon-brush"></button>
         <div id="burgStyleSection" style="display: none">
@@ -327,6 +333,9 @@ function updateBurgValues(): void {
   ensureEl("burgWealth").innerHTML = `🟡 ${rn(b.population! > 0 ? (b.product || 0) / b.population! : 0, 2)}`;
   ensureEl<HTMLInputElement>("burgTreasury").value = String(rn(b.treasury || 0, 2));
   ensureEl<HTMLInputElement>("burgTags").value = Tags.format(b.tags);
+  const institutions = ensureEl("burgInstitutions"); // Artae
+  institutions.dataset.burg = String(id);
+  void renderTownInstitutions(institutions, id);
 
   // update list and select culture
   const cultureSelect = ensureEl<HTMLSelectElement>("burgCulture");

@@ -1,4 +1,5 @@
 import { max, quadtree, range } from "d3";
+import { isLandReach, isMarineReach, MARINE_TYPE, marineShare } from "@/artae/marine";
 import { CULTURE_SETS } from "@/data/culture-sets";
 import { Pack } from "@/model/graph/pack-generator";
 import { Emblems } from "@/model/political/emblems-generator";
@@ -43,7 +44,7 @@ export interface Culture {
   tags?: string[];
 }
 
-export const CULTURE_TYPES = ["Generic", "Hunting", "Highland", "River", "Lake", "Naval", "Nomadic"] as const;
+export const CULTURE_TYPES = ["Generic", "Hunting", "Highland", "River", "Lake", "Naval", "Nomadic", "Marine"] as const; // Artae: Marine peoples live in the sea
 export type CultureType = (typeof CULTURE_TYPES)[number];
 export const DEFAULT_CULTURE_TYPE: CultureType = "Generic";
 
@@ -1136,11 +1137,20 @@ class CulturesGenerator {
 
     const codes: string[] = [];
 
-    const placeCenter = (sortingFn: (i: number) => number) => {
+    // Artae: marine cultures, as many as the sea's share of habitability, are centred in the water
+    const landPopulated = populated.filter((i: number) => this.cells.h[i] >= 20);
+    const seaPopulated = populated.filter((i: number) => this.cells.h[i] < 20);
+    const unlocked = cultures.filter(c => !c.lock).length;
+    const marineCount =
+      seaPopulated.length && landPopulated.length ? Math.min(unlocked - 1, Math.round(unlocked * marineShare())) : 0;
+    const unlockedSlots = cultures.flatMap((c, k) => (c.lock ? [] : [k]));
+    const marineSlots = new Set(marineCount > 0 ? unlockedSlots.slice(-marineCount) : []);
+
+    const placeCenter = (sortingFn: (i: number) => number, pool: number[] = populated) => {
       let spacing = (options.map.graph.width + options.map.graph.height) / 2 / count;
       const MAX_ATTEMPTS = 100;
 
-      const sorted = [...populated].sort((a, b) => sortingFn(b) - sortingFn(a));
+      const sorted = [...pool].sort((a, b) => sortingFn(b) - sortingFn(a));
       const max = Math.floor(sorted.length / 2);
 
       let cellId = 0;
@@ -1178,6 +1188,7 @@ class CulturesGenerator {
       else if (type === "Nomadic") base = 1.5;
       else if (type === "Hunting") base = 0.7;
       else if (type === "Highland") base = 1.2;
+      else if (type === MARINE_TYPE) base = 1.3;
       return rn(((Math.random() * options.generation.cultures.sizeVariety) / 2 + 1) * base, 1);
     };
 
@@ -1197,8 +1208,9 @@ class CulturesGenerator {
         return;
       }
 
-      const sortingFn = c.sort ? c.sort : (i: number) => this.cells.s[i];
-      const center = placeCenter(sortingFn);
+      const marine = marineSlots.has(i);
+      const sortingFn = c.sort && !marine ? c.sort : (i: number) => this.cells.s[i];
+      const center = placeCenter(sortingFn, marine ? seaPopulated : landPopulated.length ? landPopulated : populated);
 
       centers.add(this.cells.p[center]);
       c.center = center;
@@ -1206,7 +1218,7 @@ class CulturesGenerator {
       delete c.odd;
       delete c.sort;
       c.color = colors[i];
-      c.type = defineCultureType(center);
+      c.type = marine ? MARINE_TYPE : defineCultureType(center);
       c.expansionism = defineCultureExpansionism(c.type);
       c.origins = [0];
       c.code = abbreviate(c.name, codes);
@@ -1243,7 +1255,7 @@ class CulturesGenerator {
   /** Found a culture centered at a map point; it takes land when cultures are recalculated. Returns its id */
   add(x: number, y: number): number {
     const center = Pack.requireCell(x, y);
-    if (pack.cells.h[center] < 20) throw new Error("A culture center cannot be placed in the water");
+    const marine = pack.cells.h[center] < 20; // Artae: a culture founded in the water is a marine one
     if (pack.cultures.some(c => c.i && !c.removed && c.center === center))
       throw new Error(`Cell ${center} is already a culture center`);
     const defaultCultures = this.getDefault();
@@ -1274,7 +1286,7 @@ class CulturesGenerator {
       center,
       i,
       expansionism: 1,
-      type: DEFAULT_CULTURE_TYPE,
+      type: marine ? MARINE_TYPE : DEFAULT_CULTURE_TYPE,
       cells: 0,
       area: 0,
       rural: 0,
@@ -1316,6 +1328,7 @@ class CulturesGenerator {
     }
 
     const getBiomeCost = (c: number, biome: number, type: string) => {
+      if (type === MARINE_TYPE) return biome ? pack.biomes[biome].cost * 3 : 10; // Artae: the sea is home, land is foreign
       if (cells.biome[cultures[c].center as number] === biome) return 10; // tiny penalty for native biome
       if (type === "Hunting") return pack.biomes[biome].cost * 5; // non-native biome penalty for hunters
       if (type === "Nomadic" && biome > 4 && biome < 10) return pack.biomes[biome].cost * 10; // forest biome penalty for nomads
@@ -1325,6 +1338,7 @@ class CulturesGenerator {
     const getHeightCost = (i: number, h: number, type: string) => {
       const f = pack.features[cells.f[i]],
         a = cells.area[i];
+      if (type === MARINE_TYPE) return h < 20 ? a * 0.5 : a * 8; // Artae: cheap water, costly shore
       if (type === "Lake" && f.type === "lake") return 10; // no lake crossing penalty for Lake cultures
       if (type === "Naval" && h < 20) return a * 2; // low sea/lake crossing penalty for Naval cultures
       if (type === "Nomadic" && h < 20) return a * 50; // giant sea/lake crossing penalty for Nomads
@@ -1338,12 +1352,14 @@ class CulturesGenerator {
     };
 
     const getRiverCost = (riverId: number, cellId: number, type: string) => {
+      if (type === MARINE_TYPE) return 0;
       if (type === "River") return riverId ? 0 : 100; // penalty for river cultures
       if (!riverId) return 0; // no penalty for others if there is no river
       return minmax(cells.fl[cellId] / 10, 20, 100); // river penalty from 20 to 100 based on flux
     };
 
     const getTypeCost = (t: number, type: string) => {
+      if (type === MARINE_TYPE) return t === 1 ? 40 : t === 2 ? 120 : 0; // Artae: deeper land is out of reach
       if (t === 1) return type === "Naval" || type === "Lake" ? 0 : type === "Nomadic" ? 60 : 20; // penalty for coastline
       if (t === 2) return type === "Naval" || type === "Nomadic" ? 30 : 0; // low penalty for land level 2 for Navals and nomads
       if (t !== -1) return type === "Naval" || type === "Lake" ? 100 : 0; // penalty for mainland for navals
@@ -1361,6 +1377,8 @@ class CulturesGenerator {
           if (neibCultureId && cultures[neibCultureId].lock) return; // do not overwrite cell of locked culture
         }
 
+        if (type === MARINE_TYPE && !isMarineReach(neibCellId)) return; // Artae: marine peoples stop at the coast
+
         const targetBiome = cells.biome[neibCellId];
         const biomeCost = getBiomeCost(cultureId, targetBiome, type as string);
         const biomeChangeCost = sourceBiome === targetBiome ? 0 : 20; // penalty on biome change
@@ -1373,7 +1391,9 @@ class CulturesGenerator {
         if (totalCost > maxExpansionCost) return;
 
         if (!cost[neibCellId] || totalCost < cost[neibCellId]) {
-          if (cells.pop[neibCellId] > 0) cells.culture[neibCellId] = cultureId; // assign culture to populated cell
+          // assign culture to populated cell; Artae: land peoples hold only the sea next to their shore
+          if (cells.pop[neibCellId] > 0 && (type === MARINE_TYPE || isLandReach(neibCellId)))
+            cells.culture[neibCellId] = cultureId;
           cost[neibCellId] = totalCost;
           queue.push({ cellId: neibCellId, cultureId, priority: totalCost }, totalCost);
         }
@@ -1477,25 +1497,27 @@ class CulturesGenerator {
     this.living(cultureId).code = requireCode(code);
   }
 
-  /** Move a culture's center to a land cell at a map point; it takes effect when cultures are recalculated */
+  /** Move a culture's center to a cell at a map point (water only for marine cultures); it takes effect when cultures are recalculated */
   moveCenter(cultureId: number, x: number, y: number): void {
     const culture = this.living(cultureId);
     if (!cultureId) throw new Error("The wildlands have no center");
     const cell = Pack.requireCell(x, y);
-    if (pack.cells.h[cell] < 20) throw new Error("A culture center cannot be placed in the water");
+    if (pack.cells.h[cell] < 20 && culture.type !== MARINE_TYPE)
+      throw new Error("A land culture center cannot be placed in the water"); // Artae
     const other = pack.cultures.find(item => item.i && !item.removed && item !== culture && item.center === cell);
     if (other) throw new Error(`Cell ${cell} is already the center of culture ${other.i}`);
     culture.center = cell;
   }
 
-  /** Give land cells to a culture, or to the wildlands with id 0; burgs there take it too */
+  /** Give cells to a culture (open water only to marine ones), or to the wildlands with id 0; burgs there take it too */
   setCells(cultureId: number, cellIds: number[]): void {
     this.living(cultureId);
     const { cells } = pack;
     if (!Array.isArray(cellIds) || !cellIds.length) throw new Error("Name at least one cell");
     for (const cell of cellIds) {
       if (!Number.isInteger(cell) || cell < 0 || cell >= cells.i.length) throw new Error(`Cell ${cell} does not exist`);
-      if (cells.h[cell] < 20) throw new Error(`Cell ${cell} is water; cultures hold land only`);
+      if (cells.h[cell] < 20 && pack.cultures[cultureId]?.type !== MARINE_TYPE && cells.t[cell] !== -1)
+        throw new Error(`Cell ${cell} is open water; only marine cultures hold it`); // Artae
     }
     for (const cell of cellIds) {
       cells.culture[cell] = cultureId;

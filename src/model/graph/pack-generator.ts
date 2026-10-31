@@ -12,8 +12,8 @@ import { calculateVoronoi } from "./voronoi";
 class PackModule {
   private readonly quadtreeCache = new WeakMap<object, Quadtree<[number, number, number]>>();
 
-  /** deep ocean points dropped and coastal cells split so packed graph has a higher resolution where needed */
-  generate(): void {
+  /** coastal cells split so packed graph has a higher resolution where needed */
+  generate(keepDeepOcean = true): void {
     const { cells: gridCells, points, features, spacing, sampling, boundary } = grid;
     const newCells: { p: Point[]; g: number[]; h: number[] } = { p: [], g: [], h: [] };
     // coastal pairs further apart get a point between; the more regular the lattice, the fewer pairs qualify
@@ -31,7 +31,9 @@ class PackModule {
       const height = gridCells.h[i];
       const type = gridCells.t[i];
 
-      if (height < SEA_LEVEL && type !== -1 && type !== -2) continue; // exclude all deep ocean points
+      // Artae: deep ocean points are kept, the seas are inhabited (see src/artae/marine.ts); maps saved
+      // before that are rebuilt without them
+      if (!keepDeepOcean && height < SEA_LEVEL && type !== -1 && type !== -2) continue;
       if (type === -2 && (i % 4 === 0 || features[gridCells.f[i]].type === "lake")) continue; // exclude non-coastal lake points
 
       const [x, y] = points[i];

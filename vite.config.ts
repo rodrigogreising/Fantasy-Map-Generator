@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from "node:url";
+import { artae } from "./artae/server";
 
 /**
  * The desktop app ships the same renderer, minus the parts that only make sense on the web:
@@ -17,7 +18,7 @@ const stripWebOnlyTags = {
 export default ({ mode }: { mode: string }) => ({
   root: "./src",
   base: mode === "electron" ? "./" : process.env.NETLIFY ? "/" : "/Fantasy-Map-Generator/",
-  plugins: mode === "electron" ? [stripWebOnlyTags] : [],
+  plugins: mode === "electron" ? [stripWebOnlyTags] : [artae()],
   build: {
     outDir: mode === "electron" ? "../dist-electron/renderer" : "../dist",
     assetsDir: "./",

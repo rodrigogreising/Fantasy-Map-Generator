@@ -430,6 +430,7 @@ async function getMapURL(type: string, config: GetMapURLOptions = {}): Promise<s
 
     const isFirefox = navigator.userAgent.toLowerCase().indexOf("firefox") > -1;
     if (isFirefox && type === "mesh") clone.select("#oceanPattern").remove();
+    if (type === "mesh") clone.select("#artaeNodes").remove(); // Artae: the 3D scene draws nodes as floating solids
     if (noLabels) {
       clone.selectAll("#labels [data-label-type]").remove();
       clone.selectAll("#textPaths [data-label-type]").remove();

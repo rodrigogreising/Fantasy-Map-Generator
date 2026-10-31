@@ -1,0 +1,89 @@
+{
+  "name": "Default",
+  "levels": [1, 20],
+  "levelBase": 2,
+  "texts": { "node": "Node of {a}", "nodePair": "Node of {a} and {b}" },
+  "grammar": {
+    "pair": "{adjective} {noun}",
+    "pure": ["Pure", "Pure"],
+    "articles": {
+      "m": { "el": "the", "de": "of the", "al": "to the" },
+      "f": { "el": "the", "de": "of the", "al": "to the" }
+    }
+  },
+  "elements": [
+    { "name": "Fire", "family": "Matter", "color": "#e0482b", "adjective": ["Fiery", "Fiery"], "rule": "hot*0.8 + volcano*1.2 + desert*hot*0.4" },
+    { "name": "Water", "family": "Matter", "color": "#2f7fd1", "adjective": ["Tidal", "Tidal"], "rule": "water*(0.6 + open*0.4) + wetland*0.7 + flux*0.6" },
+    { "name": "Earth", "family": "Matter", "color": "#8a6a3e", "adjective": ["Stony", "Stony"], "rule": "if(water, 0, 0.4 + elev*(1 - elev)*1.6 + (1 - life)*0.2)" },
+    { "name": "Air", "family": "Matter", "color": "#bfe3e8", "adjective": ["Windy", "Windy"], "rule": "elev*0.8 + (1 - water)*open*(1 - slope)*0.4 + coast*0.2" },
+    { "name": "Ice", "family": "Matter", "color": "#9fd8f0", "adjective": ["Frozen", "Frozen"], "rule": "cold + glacier + polar*0.5" },
+    { "name": "Light", "family": "Spirit", "color": "#ffe58a", "adjective": ["Bright", "Bright"], "rule": "sun*(1 - depth)" },
+    { "name": "Shadow", "family": "Spirit", "color": "#2b2540", "adjective": ["Dark", "Dark"], "rule": "depth + polar" },
+    { "name": "Life", "family": "Spirit", "color": "#6fd36a", "adjective": ["Living", "Living"], "rule": "life + wetland*0.4" }
+  ],
+  "tints": [
+    { "name": "Conquest", "strategy": "conquest", "color": "#b3403a" },
+    { "name": "Kinship", "strategy": "kinship", "color": "#3f9a5a" },
+    { "name": "Artifice", "strategy": "artifice", "color": "#c98a2b" },
+    { "name": "Communion", "strategy": "communion", "color": "#6a5acd" }
+  ],
+  "kinds": [
+    {
+      "id": "cult",
+      "label": "Cult",
+      "names": ["Cult {de}", "Temple {de}", "Brotherhood {de}"],
+      "purpose": {
+        "Conquest": "converts other faiths to the worship {de}",
+        "Kinship": "keeps pacts with the creatures {de}",
+        "Artifice": "builds its rites piece by piece around {el}",
+        "Communion": "prays as one voice and embodies {el}"
+      }
+    },
+    {
+      "id": "academy",
+      "label": "Academy",
+      "names": ["Academy {de}", "College {de}", "School {de}"],
+      "purpose": {
+        "Conquest": "studies {el} by taking its rivals' techniques",
+        "Kinship": "teaches {el} in exchange with other schools",
+        "Artifice": "breaks {el} into modular techniques",
+        "Communion": "researches {el} as one shared mind"
+      }
+    },
+    {
+      "id": "order",
+      "label": "Military order",
+      "names": ["Order {de}", "Legion {de}", "Guard {de}"],
+      "purpose": {
+        "Conquest": "conquers with {el}",
+        "Kinship": "fights beside the beasts {de}",
+        "Artifice": "fits its fighters with parts {de}",
+        "Communion": "fights as one body tempered in {el}"
+      }
+    },
+    {
+      "id": "guild",
+      "label": "Guild",
+      "names": ["Guild {de}", "Workshop {de}", "League {de}"],
+      "purpose": {
+        "Conquest": "absorbs rival workshops and trades {el}",
+        "Kinship": "trades the materials {de} with other peoples",
+        "Artifice": "makes interchangeable parts {de}",
+        "Communion": "works the materials {de} as one hand"
+      }
+    },
+    {
+      "id": "lineage",
+      "label": "Noble lineage",
+      "aliases": ["clan", "house", "noble house"],
+      "rarity": 0.2,
+      "names": ["House {de}", "Lineage {de}", "Clan {de}"],
+      "purpose": {
+        "Conquest": "a family that inherits {el} and grows it by conquest and marriage",
+        "Kinship": "a lineage that inherits {el} and keeps it alive through alliances",
+        "Artifice": "a house that inherits {el} and perfects each generation",
+        "Communion": "a clan that inherits {el} and keeps its ancestors' memory as one voice"
+      }
+    }
+  ]
+}

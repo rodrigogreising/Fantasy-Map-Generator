@@ -1,4 +1,6 @@
 import { quadtree } from "d3-quadtree";
+import { MARINE_REALMS, manaOnPack, NODE_WEIGHTS } from "@/artae/geopolitics-costs";
+import { isMarineCulture } from "@/artae/marine-realms";
 import type { Label } from "@/model/annotations/labels-generator";
 import type { ProductionRecord } from "@/model/economy/production-generator";
 import { Routes } from "@/model/economy/routes-generator";
@@ -84,7 +86,11 @@ class BurgModule {
     let burgs: Burg[] = [0 as unknown as Burg]; // burgs array
     cells.burg = new Uint16Array(cells.i.length);
 
-    const populatedCells = cells.i.filter(i => cells.s[i] > 0 && cells.culture[i]);
+    // Artae: land peoples build on land, marine peoples in the water they hold
+    const isMarine = (cell: number) => cells.h[cell] < 20;
+    const populatedCells = cells.i.filter(
+      i => cells.s[i] > 0 && cells.culture[i] && isMarine(i) === isMarineCulture(cells.culture[i])
+    );
     if (!populatedCells.length) {
       log.error("There is no populated cells with culture assigned. Cannot generate states");
       pack.burgs = burgs;
@@ -95,19 +101,40 @@ class BurgModule {
 
     const generateCapitals = () => {
       const randomize = (score: number) => score * (0.5 + Math.random() * 0.5);
-      const score = new Int16Array(cells.s.map(randomize));
+      // Artae: strong nodes attract capitals, and marine peoples get their share of them
+      const mana = manaOnPack();
+      const score = new Int16Array(
+        Array.from(cells.s, (value, i) =>
+          randomize(value + (mana ? (NODE_WEIGHTS.capitalBonus * mana.level(i)) / 30 : 0))
+        )
+      );
       const sorted = populatedCells.sort((a, b) => score[b] - score[a]);
 
-      const capitalsNumber = getCapitalsNumber();
+      // Artae: the land keeps upstream's capital count; the sea adds realms in proportion to its populated cells
+      const landCapitals = getCapitalsNumber();
+      const marineCells = sorted.filter(isMarine).length;
+      const landCells = sorted.length - marineCells || 1;
+      const hasMarine = pack.cultures.some(culture => culture.i && !culture.removed && isMarineCulture(culture.i));
+      const marineQuota = hasMarine
+        ? Math.min(
+            Math.round((landCapitals * MARINE_REALMS.density * marineCells) / landCells),
+            Math.floor(marineCells / 10)
+          )
+        : 0;
+      const capitalsNumber = landCapitals + marineQuota;
+      const quota = (marine: boolean) => (marine ? marineQuota : landCapitals);
+      const placed = { true: 0, false: 0 };
       let spacing = (options.map.graph.width + options.map.graph.height) / 2 / capitalsNumber; // min distance between capitals
 
       for (let i = 0; burgs.length <= capitalsNumber; i++) {
         const cell = sorted[i];
         const [x, y] = cells.p[cell];
+        const marine = isMarine(cell);
 
-        if (burgsQuadtree.find(x, y, spacing) === undefined) {
+        if (placed[`${marine}`] < quota(marine) && burgsQuadtree.find(x, y, spacing) === undefined) {
           burgs.push({ cell, x, y, i: burgs.length });
           burgsQuadtree.add([x, y]);
+          placed[`${marine}`]++;
         }
 
         // reset if all cells were checked
@@ -116,6 +143,7 @@ class BurgModule {
           burgsQuadtree = quadtree();
           i = -1;
           burgs = [0 as unknown as Burg];
+          placed.true = placed.false = 0;
           spacing /= 1.2;
         }
       }
@@ -135,16 +163,32 @@ class BurgModule {
 
     const generateTowns = () => {
       const randomize = (score: number) => score * gauss(1, 3, 0, 20, 3);
-      const score = new Int16Array(cells.s.map(randomize));
+      // Artae: towns cluster where mana is strong, as capitals do
+      const mana = manaOnPack();
+      const score = new Int16Array(
+        Array.from(cells.s, (value, i) => randomize(value + (mana ? (NODE_WEIGHTS.townBonus * mana.level(i)) / 30 : 0)))
+      );
       const sorted = populatedCells.sort((a, b) => score[b] - score[a]);
 
+      // Artae: towns follow population, so the sea gets as many towns per person as the land
+      const population = (marine: boolean) =>
+        sorted.reduce((sum, cell) => (isMarine(cell) === marine ? sum + cells.pop[cell] : sum), 0);
+      const landPopulation = population(false);
+      const marinePopulation = population(true);
       const burgsNumber = getTownsNumber();
+      const landTowns = landPopulation
+        ? Math.round((burgsNumber * landPopulation) / (landPopulation + marinePopulation))
+        : 0;
+      const quota = { false: landTowns, true: burgsNumber - landTowns };
+      const added = { true: 0, false: 0 };
       let spacing = (options.map.graph.width + options.map.graph.height) / 150 / (burgsNumber ** 0.7 / 66); // min distance between town
 
-      for (let added = 0; added < burgsNumber && spacing > 1; ) {
-        for (let i = 0; added < burgsNumber && i < sorted.length; i++) {
+      while (added.true + added.false < burgsNumber && spacing > 1) {
+        for (let i = 0; added.true + added.false < burgsNumber && i < sorted.length; i++) {
           if (cells.burg[sorted[i]]) continue;
           const cell = sorted[i];
+          const marine = isMarine(cell);
+          if (added[`${marine}`] >= quota[`${marine}`]) continue;
           const [x, y] = cells.p[cell];
 
           const minSpacing = spacing * gauss(1, 0.3, 0.2, 2, 2); // randomize to make placement not uniform
@@ -166,7 +210,7 @@ class BurgModule {
             capital: 0,
             tags: []
           });
-          added++;
+          added[`${marine}`]++;
           cells.burg[cell] = burgId;
         }
 
@@ -192,7 +236,14 @@ class BurgModule {
     }
 
     function getTownsNumber() {
-      if (isAutoBurgLimit()) return rn(populatedCells.length / 5 / (grid.points.length / 10000) ** 0.8);
+      if (isAutoBurgLimit()) {
+        // Artae: the land count is upstream's; the sea adds towns in proportion to its population
+        const land = populatedCells.filter(cell => !isMarine(cell));
+        const landPop = land.reduce((sum, cell) => sum + cells.pop[cell], 0);
+        const seaPop = populatedCells.reduce((sum, cell) => sum + (isMarine(cell) ? cells.pop[cell] : 0), 0);
+        const landTowns = land.length / 5 / (grid.points.length / 10000) ** 0.8;
+        return rn(landPop ? landTowns * (1 + seaPop / landPop) : populatedCells.length / 5);
+      }
       return Math.min(options.generation.burgs.limit, populatedCells.length);
     }
   }
@@ -256,7 +307,7 @@ class BurgModule {
     };
 
     for (const burg of burgs) {
-      if (!burg.i || burg.lock) continue;
+      if (!burg.i || burg.lock || cells.h[burg.cell] < 20) continue; // Artae: underwater burgs are no ports
       const haven = cells.haven[burg.cell];
       const landFeature = cells.f[burg.cell];
 
@@ -793,7 +844,8 @@ class BurgModule {
   add(x: number, y: number): number {
     const { cells } = pack;
     const cellId = Pack.requireCell(x, y);
-    if (cells.h[cellId] < 20) throw new Error("A burg cannot be placed in the water");
+    if (cells.h[cellId] < 20 && !isMarineCulture(cells.culture[cellId]))
+      throw new Error("A burg cannot be placed in the water"); // Artae: unless marine people live there
     if (cells.burg[cellId]) throw new Error(`Cell ${cellId} already has burg ${cells.burg[cellId]}`);
 
     const burgId = pack.burgs.length;
@@ -884,7 +936,9 @@ class BurgModule {
     }
 
     const score = new Int16Array(cells.s.map(value => value * Math.random()));
-    const sorted = cells.i.filter(i => score[i] > 0 && cells.culture[i]).sort((a, b) => score[b] - score[a]);
+    const sorted = cells.i
+      .filter(i => score[i] > 0 && cells.culture[i] && (cells.h[i] >= 20 || isMarineCulture(cells.culture[i]))) // Artae
+      .sort((a, b) => score[b] - score[a]);
     const statesCount = states.filter(state => state.i && !state.removed).length;
     const burgsCount =
       (isAutoBurgLimit()
@@ -1034,7 +1088,8 @@ class BurgModule {
     const burg = this.living(burgId);
     const { cells } = pack;
     const cell = Pack.requireCell(x, y);
-    if (cells.h[cell] < 20) throw new Error("A burg cannot be placed in the water");
+    if (cells.h[cell] < 20 && !isMarineCulture(cells.culture[cell]))
+      throw new Error("A burg cannot be placed in the water"); // Artae: unless marine people live there
     if (cells.burg[cell] && cells.burg[cell] !== burgId)
       throw new Error(`Cell ${cell} already has burg ${cells.burg[cell]}`);
     const state = cells.state[cell];

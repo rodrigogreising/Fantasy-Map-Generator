@@ -43,7 +43,22 @@ const DEFAULT_PRESETS: Record<string, LayerId[]> = {
     "vignette"
   ],
   emblems: ["borders", "burgIcons", "emblems", "ice", "lakes", "rivers", "routes", "scaleBar", "states", "vignette"],
-  landmass: ["scaleBar"]
+  landmass: ["scaleBar"],
+  nodos: ["coordinates", "elements", "lakes", "nodes", "rivers", "scaleBar", "vignette"], // Artae
+  geopolitica: [
+    "burgIcons", // Artae: towns open the burg editor, with their institutions
+    "coordinates",
+    "elements",
+    "labels",
+    "lakes",
+    "nodes",
+    "realmBorders",
+    "rivers",
+    "routes",
+    "scaleBar",
+    "states",
+    "vignette"
+  ] // Artae
 };
 
 const presets: Record<string, string[]> = { ...DEFAULT_PRESETS };

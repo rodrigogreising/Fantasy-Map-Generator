@@ -1,4 +1,6 @@
 import { select } from "d3";
+import { nodeRealmSuffix } from "@/artae/geopolitics";
+import { hideManaPanel, updateManaPanel } from "@/artae/mana-panel";
 import { FEATURE_SUBTYPE_LABELS } from "@/data/id-labels";
 import { Goods } from "@/model/economy/goods-generator";
 import { Markets } from "@/model/economy/markets-generator";
@@ -39,6 +41,11 @@ export function handleMouseMove(event: MouseEvent | TouchEvent): void {
   showNotes(event);
 
   const gridCellId = Grid.findCell(point[0], point[1]);
+  // Artae: the mana panel replaces text tips for the Mana and Fronteras layers
+  if (Layers.isOn("elements") || Layers.isOn("realmBorders")) {
+    const nodeElement = (event.target as Element | null)?.closest?.("#artaeNodes [id^='artaeNode']");
+    updateManaPanel(cellId, gridCellId, nodeElement ? Number(nodeElement.id.replace("artaeNode", "")) : undefined);
+  } else hideManaPanel();
   if (findEl("tooltip")?.dataset.main) showMainTip();
   else showMapTooltip(point, event, cellId, gridCellId);
 }
@@ -126,6 +133,8 @@ interface TipContext {
  */
 function getElementTip({ group, target, event, path, cellId }: TipContext): string | undefined {
   const parent = target.parentNode as SVGElement;
+  const nodeElement = target.closest<SVGElement>("#artaeNodes [data-label]"); // Artae
+  if (nodeElement) return nodeElement.dataset.label + nodeRealmSuffix(Number(nodeElement.id.replace("artaeNode", "")));
   const burgElement = target.closest<SVGElement>("[data-label-type='burg'][data-id], #burgIcons [data-id]");
   if (burgElement) {
     const burgId = Number(burgElement.dataset.id);
@@ -296,6 +305,7 @@ function getGoodsTip(target: SVGElement, cellId: number): string | undefined {
 /** Show the value of the active data layer in the hovered cell */
 function showLayerTip(point: Point, cellId: number, gridCellId: number, isLand: boolean): void {
   const { cells } = pack;
+  if (Layers.isOn("elements") || Layers.isOn("realmBorders")) return; // Artae: shown in the mana panel
   if (Layers.isOn("precipitation") && isLand)
     return void tip(t("Annual Precipitation: {{value}}", { value: getFriendlyPrecipitation(cellId, pack, grid) }));
   if (Layers.isOn("population")) return void tip(getPopulationTip(cellId));

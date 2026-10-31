@@ -13,6 +13,8 @@ async function start(): Promise<void> {
   await Catalog.load(language).catch(error => log.error("Interface strings failed to load", error));
   document.title = t("Azgaar's Fantasy Map Generator");
   const { boot } = await import("./app");
+  void import("./artae/bridge"); // Artae fork: repo maps and canon links, see artae/README.md
+  void import("./artae/node-finder").then(finder => finder.mountNodeFinder()); // Artae
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else void boot();
 }

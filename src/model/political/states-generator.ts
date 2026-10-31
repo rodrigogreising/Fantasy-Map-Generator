@@ -1,5 +1,9 @@
 import Alea from "alea";
 import { mean, median, quadtree, sum } from "d3";
+import { MARINE_REALMS, manaOnPack, NODE_WEIGHTS } from "@/artae/geopolitics-costs";
+import { isLandReach, isMarineReach, MARINE_TYPE } from "@/artae/marine";
+import { isMarineCulture, isMarineState } from "@/artae/marine-realms";
+import { nodes } from "@/artae/nodes";
 import { getInverseRelation, RELATIONS } from "@/data/diplomacy";
 import type { Label } from "@/model/annotations/labels-generator";
 import { Markets } from "@/model/economy/markets-generator";
@@ -384,7 +388,24 @@ class StatesModule {
     cells.state = cells.state || new Uint16Array(cells.i.length);
 
     const queue = new FlatQueue<{ e: number; p: number; s: number; b: number }>();
-    const cost: number[] = [];
+    // Artae: marine and land realms travel separate domains and compete only for the cells both may hold (the coast)
+    const cost = { land: [] as number[], marine: [] as number[] };
+    const heldCost: number[] = [];
+    const canHold = (cell: number, marine: boolean) => (marine ? isMarineReach(cell) : isLandReach(cell));
+
+    // Artae: nodes pull realms towards them and mana boundaries slow them down (see src/artae/geopolitics-costs.ts)
+    const mana = manaOnPack();
+    // a region goes to the realm that reaches it first: others pay to push into it, so borders settle on its edge
+    const holder = new Int32Array(mana ? nodes().length : 0).fill(-1);
+    const manaCost = (from: number, to: number, stateId: number) => {
+      if (!mana) return 0;
+      const region = mana.region(to);
+      if (region < 0) return 0;
+      const crossing = region !== mana.region(from) ? NODE_WEIGHTS.borderCost : 0;
+      const pull = holder[region] < 0 ? (NODE_WEIGHTS.pull * mana.nodeLevel(region)) / 30 : 0;
+      const contested = holder[region] >= 0 && holder[region] !== stateId ? NODE_WEIGHTS.contested : 0;
+      return crossing + contested - pull;
+    };
 
     const growthRate = (cells.i.length / 2) * options.generation.states.growthRate; // limit cost for state growth
 
@@ -403,34 +424,60 @@ class StatesModule {
       const cultureCenter = cultures[state.culture].center!;
       const b = cells.biome[cultureCenter]; // state native biome
       queue.push({ e: state.center, p: 0, s: state.i, b }, 0);
-      cost[state.center] = 1;
+      cost[isMarineState(state.i) ? "marine" : "land"][state.center] = 1;
+      heldCost[state.center] = 1;
     }
+
+    // Artae: a marine realm holds at most an average land realm's area: open ocean has no rivals to stop it.
+    // Area, not cells: deep-ocean cells are much larger than the subdivided coastal ones
+    const landStates = states.filter(state => state.i && !state.removed && !isMarineState(state.i)).length || 1;
+    let landArea = 0;
+    for (const i of cells.i) if (cells.h[i] >= 20) landArea += cells.area[i];
+    const marineCap = (MARINE_REALMS.size * landArea) / landStates;
+    const held = new Float64Array(states.length);
 
     while (queue.length) {
       const next = queue.pop();
 
-      const { e, p, s, b } = next;
+      const { e: from, p, s, b } = next;
       const { type, culture } = states[s];
+      const marine = isMarineState(s);
+      const domainCost = cost[marine ? "marine" : "land"];
 
-      cells.c[e].forEach(e => {
+      cells.c[from].forEach(e => {
         const state = states[cells.state[e]];
         if (state.lock) return; // do not overwrite cell of locked states
         if (cells.state[e] && e === state.center) return; // do not overwrite capital cells
+        if (marine && !isMarineReach(e)) return; // Artae: marine realms never go inland
 
+        const water = cells.h[e] < 20;
         const cultureCost = culture === cells.culture[e] ? -9 : 100;
-        const populationCost = cells.h[e] < 20 ? 0 : cells.s[e] ? Math.max(20 - cells.s[e], 0) : 5000;
-        const biomeCost = this.getBiomeCost(b, cells.biome[e], type);
-        const heightCost = this.getHeightCost(pack.features[cells.f[e]], cells.h[e], type);
-        const riverCost = this.getRiverCost(cells.r[e], e, type);
-        const typeCost = this.getTypeCost(cells.t[e], type);
-        const cellCost = Math.max(cultureCost + populationCost + biomeCost + heightCost + riverCost + typeCost, 0);
+        const populationCost = water && !marine ? 0 : cells.s[e] ? Math.max(20 - cells.s[e], 0) : marine ? 40 : 5000; // Artae
+        const biomeCost = marine ? (water ? 10 : 200) : this.getBiomeCost(b, cells.biome[e], type);
+        const heightCost = marine ? (water ? 0 : 800) : this.getHeightCost(pack.features[cells.f[e]], cells.h[e], type);
+        const riverCost = marine ? 0 : this.getRiverCost(cells.r[e], e, type);
+        const typeCost = marine ? 0 : this.getTypeCost(cells.t[e], type);
+        const cellCost = Math.max(
+          cultureCost + populationCost + biomeCost + heightCost + riverCost + typeCost + manaCost(from, e, s),
+          0
+        );
         const totalCost = p + 10 + cellCost / states[s].expansionism;
 
-        if (totalCost > growthRate) return;
+        if (totalCost > (marine ? growthRate * MARINE_REALMS.reach : growthRate)) return; // Artae: marine realms stay small
+        if (marine && held[s] >= marineCap) return; // Artae
 
-        if (!cost[e] || totalCost < cost[e]) {
-          if (cells.h[e] >= 20) cells.state[e] = s; // assign state to cell
-          cost[e] = totalCost;
+        if (!domainCost[e] || totalCost < domainCost[e]) {
+          domainCost[e] = totalCost;
+          if (canHold(e, marine) && (!heldCost[e] || totalCost < heldCost[e])) {
+            if (cells.state[e] !== s) {
+              held[cells.state[e]] -= cells.area[e]; // Artae: area of each realm, for the marine cap
+              held[s] += cells.area[e];
+            }
+            cells.state[e] = s; // assign state to cell
+            heldCost[e] = totalCost;
+            const region = mana ? mana.region(e) : -1;
+            if (region >= 0 && holder[region] < 0) holder[region] = s;
+          }
           queue.push({ e, p: totalCost, s, b }, totalCost);
         }
       });
@@ -486,11 +533,11 @@ class StatesModule {
     });
 
     for (const i of cells.i) {
-      if (cells.h[i] < 20) continue;
+      if (cells.h[i] < 20 && !cells.state[i]) continue; // Artae: held water counts, marine realms have neighbours
       const s = cells.state[i];
 
       cells.c[i]
-        .filter(c => cells.h[c] >= 20 && cells.state[c] !== s)
+        .filter(c => (cells.h[c] >= 20 || cells.state[c]) && cells.state[c] !== s)
         .forEach(c => {
           stateNeighbors[s].add(cells.state[c]);
         });
@@ -535,7 +582,7 @@ class StatesModule {
     });
 
     for (const i of cells.i) {
-      if (cells.h[i] < 20) continue;
+      if (cells.h[i] < 20 && !cells.state[i]) continue; // Artae: held water counts
       const s = cells.state[i];
 
       // collect stats
@@ -591,8 +638,8 @@ class StatesModule {
     // Pre-Calculate state area since collectStatistics() hasn't run yet.
     const stateAreas = new Float32Array(states.length);
     for (const i of cells.i) {
-      if (cells.h[i] >= 20 && cells.state[i]) {
-        stateAreas[cells.state[i]] += cells.area[i];
+      if (cells.state[i]) {
+        stateAreas[cells.state[i]] += cells.area[i]; // Artae: held water counts
       }
     }
 
@@ -1086,7 +1133,8 @@ class StatesModule {
   add(x: number, y: number): number {
     const { cells, burgs, cultures } = pack;
     const center = Pack.requireCell(x, y);
-    if (cells.h[center] < 20) throw new Error("A state cannot be placed in the water");
+    if (cells.h[center] < 20 && !isMarineCulture(cells.culture[center]))
+      throw new Error("A state cannot be placed in the water"); // Artae: unless marine people live there
     const existing = cells.burg[center];
     if (existing && burgs[existing].capital) throw new Error(`Burg ${existing} is already a capital`);
     const capital = existing || Burgs.add(x, y);
@@ -1412,7 +1460,8 @@ class StatesModule {
     const centers = new Set(states.filter(state => state.i && !state.removed).map(state => state.center));
     for (const cell of cellIds) {
       if (!Number.isInteger(cell) || cell < 0 || cell >= cells.i.length) throw new Error(`Cell ${cell} does not exist`);
-      if (cells.h[cell] < 20) throw new Error(`Cell ${cell} is water; states hold land only`);
+      if (cells.h[cell] < 20 && states[stateId]?.type !== MARINE_TYPE && cells.t[cell] !== -1)
+        throw new Error(`Cell ${cell} is open water; only marine states hold it`); // Artae
       if (centers.has(cell) && cells.state[cell] !== stateId)
         throw new Error(`Cell ${cell} is the center of state ${cells.state[cell]} and cannot change hands`);
     }

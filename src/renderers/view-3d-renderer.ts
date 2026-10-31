@@ -3,12 +3,16 @@ import { MapControls } from "three/addons/controls/MapControls.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { OBJExporter } from "three/addons/exporters/OBJExporter.js";
 import { LoopSubdivision } from "three-subdivide";
+import { ELEMENTS } from "@/artae/elements";
+import { nodeRealmSuffix } from "@/artae/geopolitics";
+import { nodeLabel, nodes } from "@/artae/nodes";
 import { Grid } from "@/model/graph/grid-generator";
 import { Options } from "@/model/options/options-model";
 import type { Burg } from "@/model/political/burgs-generator";
 import type { State } from "@/model/political/states-generator";
 import { Layers } from "@/renderers/layers";
 import { isGlobeView, setViewMode } from "@/renderers/view-mode";
+import { tip } from "@/ui/tooltips";
 import { throttle } from "@/utils/common-utils";
 import { t } from "@/utils/i18n";
 import { log } from "@/utils/logger";
@@ -119,7 +123,10 @@ const redraw = () => {
 const update = () => {
   if (!active) return;
   if (isGlobeView()) updateGlobeTexure();
-  else update3dTexture();
+  else {
+    createNodes();
+    update3dTexture();
+  }
 };
 
 // try to clean the memory as much as possible
@@ -370,6 +377,7 @@ async function newMesh(canvas: HTMLCanvasElement) {
   camera = new THREE.PerspectiveCamera(70, canvas.width / canvas.height, 0.1, 2000);
   camera.position.set(0, 400, 500); // Set initial camera position for isometric view
   controls = withR140Input(new MapControls(camera, canvas)); // Google Maps-style navigation
+  canvas.addEventListener("pointermove", hoverNode);
 
   // Set initial target at map center
   if (controls.target) controls.target.set(0, 0, 0);
@@ -585,8 +593,84 @@ async function createLabels() {
   doWorkOnRender();
 }
 
+// Artae: the setting's nodes float above the terrain as octahedra, primary element fill, secondary edges
+let nodeObjects: THREE.Object3D[] = [];
+const NODE_FLOAT = 14; // height above the ground, before the node's own size
+
+function createNodes() {
+  deleteNodes();
+  if (!Layers.isOn("nodes")) return;
+  for (const { i, x: mapX, y: mapY, node, lock, name } of nodes()) {
+    const [x, y, z] = get3dCoords(mapX, mapY);
+    const size = 1.2 + node.level / 8;
+    const top = y + NODE_FLOAT + size * 2;
+    const geometry = new THREE.OctahedronGeometry(size);
+    const solid = new THREE.Mesh(
+      geometry,
+      new THREE.MeshLambertMaterial({
+        color: ELEMENTS[node.primary].color,
+        emissive: ELEMENTS[node.primary].color,
+        emissiveIntensity: 0.35
+      })
+    );
+    solid.position.set(x, top, z);
+    solid.userData.label = nodeLabel(node, name) + nodeRealmSuffix(i);
+    solid.scale.y = 1.4;
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry),
+      new THREE.LineBasicMaterial({ color: lock ? "#ffffff" : ELEMENTS[node.secondary].color })
+    );
+    solid.add(edges);
+    const hitArea = new THREE.Mesh(
+      new THREE.SphereGeometry(size * 2.5, 8, 6),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+    ); // invisible, wider than the solid, so a small node is easy to hover
+    hitArea.userData.label = solid.userData.label;
+    solid.add(hitArea);
+    const tether = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, y, z), new THREE.Vector3(x, top - size * 1.4, z)]),
+      new THREE.LineBasicMaterial({ color: ELEMENTS[node.secondary].color, transparent: true, opacity: 0.5 })
+    );
+    for (const object of [solid, tether]) {
+      scene.add(object);
+      nodeObjects.push(object);
+    }
+  }
+}
+
+const nodeRay = new THREE.Raycaster();
+const hoverNode = throttle((event: PointerEvent) => {
+  if (!active || !nodeObjects.length) return;
+  const rect = Renderer.domElement.getBoundingClientRect(); // the throttled call runs after dispatch: no currentTarget
+  const pointer = new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  nodeRay.setFromCamera(pointer, camera);
+  const hit = nodeRay
+    .intersectObjects(
+      nodeObjects.filter(object => object instanceof THREE.Mesh),
+      true
+    )
+    .find(({ object }) => object.userData.label);
+  if (hit) tip(hit.object.userData.label as string);
+}, 60);
+
+function deleteNodes() {
+  for (const object of nodeObjects) {
+    scene.remove(object);
+    object.traverse(child => {
+      const disposable = child as THREE.Mesh;
+      disposable.geometry?.dispose();
+      (disposable.material as THREE.Material | undefined)?.dispose();
+    });
+  }
+  nodeObjects = [];
+}
+
 function deleteLabels() {
   if (!scene) return;
+  deleteNodes();
 
   for (const mesh of labels) {
     scene.remove(mesh);
@@ -815,10 +899,12 @@ async function buildMesh(build: number, width: number, height: number) {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   scene.add(mesh);
+  createNodes();
   render();
 
   if (options.app.threeD.labels3d) {
     await createLabels();
+    createNodes();
     render();
   }
 }

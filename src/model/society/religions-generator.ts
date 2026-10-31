@@ -1,4 +1,6 @@
 import { quadtree } from "d3";
+import { isLandReach, isMarineReach } from "@/artae/marine";
+import { isMarineCulture } from "@/artae/marine-realms";
 import { Routes } from "@/model/economy/routes-generator";
 import { Pack } from "@/model/graph/pack-generator";
 import { getMixedColor, getRandomColor, requireColor } from "@/utils/color-utils";
@@ -738,7 +740,10 @@ class ReligionsModule {
 
       if (validBurgs.length >= requiredReligionsNumber)
         return validBurgs.sort((a, b) => b.population! - a.population!).map(burg => burg.cell);
-      return cells.i.filter(i => cells.s[i] > 2).sort((a, b) => cells.s[b] - cells.s[a]);
+      // Artae: land cells, and the sea of Marine cultures
+      return cells.i
+        .filter(i => cells.s[i] > 2 && (cells.h[i] >= 20 || isMarineCulture(cells.culture[i])))
+        .sort((a, b) => cells.s[b] - cells.s[a]);
     }
   }
 
@@ -1084,6 +1089,7 @@ class ReligionsModule {
       const { e: cellId, p, r, s: state } = queue.pop();
       const religion = religionsMap.get(r)!;
       const { culture, expansion, expansionism } = religion;
+      const marine = isMarineCulture(culture); // Artae: sea faiths spread by sea, land faiths keep to the shore
 
       cells.c[cellId].forEach(nextCell => {
         if (expansion === "culture" && culture !== cells.culture[nextCell]) return;
@@ -1092,14 +1098,14 @@ class ReligionsModule {
 
         const cultureCost = culture !== cells.culture[nextCell] ? 10 : 0;
         const stateCost = state !== cells.state[nextCell] ? 10 : 0;
-        const passageCost = this.getPassageCost(cellId, nextCell);
+        const passageCost = this.getPassageCost(cellId, nextCell, marine);
 
         const cellCost = cultureCost + stateCost + passageCost;
         const totalCost = p + 10 + cellCost / expansionism;
         if (totalCost > maxExpansionCost) return;
 
         if (!cost[nextCell] || totalCost < cost[nextCell]) {
-          if (cells.culture[nextCell]) religionIds[nextCell] = r; // assign religion to cell
+          if (cells.culture[nextCell] && this.reaches(nextCell, marine)) religionIds[nextCell] = r; // assign religion to cell
           cost[nextCell] = totalCost;
 
           queue.push({ e: nextCell, p: totalCost, r, s: state }, totalCost);
@@ -1132,17 +1138,18 @@ class ReligionsModule {
     while (queue.length) {
       const { e: cellId, p, r, b: baseReligionId } = queue.pop();
       const religion = religionsMap.get(r)!;
+      const marine = isMarineCulture(religion.culture); // Artae
 
       for (const nextCell of cells.c[cellId]) {
         if (religionsMap.get(religionIds[nextCell])?.lock) continue;
 
         const religionCost = religionIds[nextCell] === baseReligionId ? 0 : 2000;
-        const passageCost = this.getPassageCost(cellId, nextCell);
+        const passageCost = this.getPassageCost(cellId, nextCell, marine);
         const totalCost = p + 10 + (religionCost + passageCost) / Math.max(religion.expansionism, 0.1);
         if (totalCost > maxExpansionCost) continue;
 
         if (!cost[nextCell] || totalCost < cost[nextCell]) {
-          if (cells.culture[nextCell]) religionIds[nextCell] = r;
+          if (cells.culture[nextCell] && this.reaches(nextCell, marine)) religionIds[nextCell] = r;
           cost[nextCell] = totalCost;
           queue.push({ e: nextCell, p: totalCost, r, b: baseReligionId }, totalCost);
         }
@@ -1198,8 +1205,14 @@ class ReligionsModule {
       });
   }
 
-  private getPassageCost(cellId: number, nextCellId: number): number {
+  /** Artae: whether a faith can hold a cell: sea faiths any water and the coast, land faiths any land and the shore */
+  private reaches(cellId: number, marine: boolean): boolean {
+    return marine ? isMarineReach(cellId) : isLandReach(cellId);
+  }
+
+  private getPassageCost(cellId: number, nextCellId: number, marine = false): number {
     const route = Routes.getRoute(cellId, nextCellId);
+    if (marine) return isWater(nextCellId, pack) ? (route ? 5 : 15) : isMarineReach(nextCellId) ? 60 : 5000; // Artae
     if (isWater(cellId, pack)) return route ? 50 : 500;
 
     const biomePassageCost = pack.biomes[pack.cells.biome[nextCellId]].cost;
@@ -1360,7 +1373,8 @@ class ReligionsModule {
     const religion = this.living(religionId);
     if (!religionId) throw new Error("Lands without religion have no center");
     const cell = Pack.requireCell(x, y);
-    if (pack.cells.h[cell] < 20) throw new Error("A religion center cannot be placed in the water");
+    if (pack.cells.h[cell] < 20 && !isMarineCulture(pack.cells.culture[cell]))
+      throw new Error("A religion center cannot be placed in the water, except in the sea of a Marine culture"); // Artae
     const other = pack.religions.find(item => item.i && !item.removed && item !== religion && item.center === cell);
     if (other) throw new Error(`Cell ${cell} is already the center of religion ${other.i}`);
     religion.center = cell;
@@ -1373,7 +1387,8 @@ class ReligionsModule {
     if (!Array.isArray(cellIds) || !cellIds.length) throw new Error("Name at least one cell");
     for (const cell of cellIds) {
       if (!Number.isInteger(cell) || cell < 0 || cell >= cells.i.length) throw new Error(`Cell ${cell} does not exist`);
-      if (cells.h[cell] < 20) throw new Error(`Cell ${cell} is water; religions hold land only`);
+      if (cells.h[cell] < 20 && !cells.culture[cell])
+        throw new Error(`Cell ${cell} is uninhabited water; religions hold peopled cells only`); // Artae
     }
     for (const cell of cellIds) {
       cells.religion[cell] = religionId;
@@ -1390,7 +1405,8 @@ class ReligionsModule {
   add(x: number, y: number): number {
     const { cells, cultures, religions } = pack;
     const center = Pack.requireCell(x, y);
-    if (cells.h[center] < 20) throw new Error("A religion center cannot be placed in the water");
+    if (cells.h[center] < 20 && !isMarineCulture(cells.culture[center]))
+      throw new Error("A religion center cannot be placed in the water, except in the sea of a Marine culture"); // Artae
     if (religions.some(r => r.i && !r.removed && r.center === center))
       throw new Error(`Cell ${center} is already a religion center`);
     const religionId = cells.religion[center];

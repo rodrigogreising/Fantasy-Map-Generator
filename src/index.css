@@ -212,11 +212,8 @@ t,
   fill-rule: evenodd;
 }
 
-#statesBody,
-#provincesBody,
-#relig,
-#biomes,
-#cults {
+/* Artae: cultures, states, provinces and religions also hold the sea, so only biomes keep the land mask */
+#biomes {
   mask: url(#land);
 }
 

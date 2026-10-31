@@ -1,3 +1,4 @@
+import { restoreNodes } from "@/artae/nodes";
 import { Controllers } from "@/controllers";
 import { Goods } from "@/model/economy/goods-generator";
 import { Markets } from "@/model/economy/markets-generator";
@@ -313,6 +314,7 @@ async function parseLoadedData(data: string[], mapVersion: string | null): Promi
     grid.cells.t = Int8Array.from(data[10].split(","), Number);
     grid.cells.temp = Int8Array.from(data[11].split(","), Number);
     Pack.generate();
+    if (data[16] && pack.cells.i.length !== data[16].split(",").length) Pack.generate(false); // Artae: a map saved without the deep ocean
     Features.markupPack();
     if (data[3]?.startsWith("[")) {
       type LoadedBiome = (typeof pack.biomes)[number] & {
@@ -372,6 +374,7 @@ async function parseLoadedData(data: string[], mapVersion: string | null): Promi
     pack.relief = data[49] ? JSON.parse(data[49]) : [];
     pack.journeys = data[52] ? JSON.parse(data[52]) : [];
     pack.legends = data[53] ? JSON.parse(data[53]) : [];
+    restoreNodes(data); // Artae fork
 
     // save omits names that equal the default base at the same index
     const defaultNameBases = Names.getNameBases();

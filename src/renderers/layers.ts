@@ -1,5 +1,7 @@
 // Global layers registry: owns layers list, order, and svg skeleton
 
+import { drawRealmBorders, eraseRealmBorders } from "@/artae/geopolitics";
+import { drawMana, drawNodes } from "@/artae/nodes";
 import { drawBiomes } from "@/renderers/draw-biomes";
 import { drawBorders } from "@/renderers/draw-borders";
 import { drawBurgIcons } from "@/renderers/draw-burg-icons";
@@ -317,6 +319,12 @@ const mapLayers = [
   }),
   new Layer({ id: "biomes", parent: "viewbox", draw: drawBiomes }),
   new Layer({
+    id: "elements",
+    parent: "viewbox",
+    attrs: { stroke: "#000", "stroke-width": "0.4", "stroke-opacity": "0.35" },
+    draw: drawMana
+  }), // Artae: mana of the setting's nodes
+  new Layer({
     id: "cells",
     parent: "viewbox",
     children: [
@@ -360,6 +368,7 @@ const mapLayers = [
     children: ["stateBorders", "provinceBorders"].map(id => ({ id, tag: "g" })),
     draw: drawBorders
   }),
+  new Layer({ id: "realmBorders", parent: "viewbox", draw: drawRealmBorders, erase: eraseRealmBorders }), // Artae
   new Layer({
     id: "routes",
     parent: "viewbox",
@@ -422,6 +431,7 @@ const mapLayers = [
   new Layer({ id: "military", element: "armies", parent: "viewbox", draw: drawMilitary }),
   new Layer({ id: "fogging", parent: "viewbox", attrs: { mask: "url(#fog)" }, permanent: true, draw: drawFogging }),
   new Layer({ id: "markers", parent: "viewbox", draw: drawMarkers }),
+  new Layer({ id: "nodes", element: "artaeNodes", parent: "viewbox", draw: drawNodes }), // Artae: the setting's nodes
   new Layer({ id: "journeys", parent: "viewbox", draw: drawJourneys }),
   new Layer({ id: "rulers", element: "ruler", parent: "viewbox", draw: drawMeasurers }),
   new Layer({ id: "debug", parent: "viewbox", permanent: true, keepContent: true }),

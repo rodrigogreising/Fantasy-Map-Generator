@@ -23,7 +23,9 @@ export const LAYER_PRESETS: Record<string, string> = {
   trade: t("Trade animation"),
   military: t("Military map"),
   emblems: t("Emblems"),
-  landmass: t("Pure landmass")
+  landmass: t("Pure landmass"),
+  nodos: "Nodos y mana", // Artae
+  geopolitica: "Geopolítica mágica" // Artae
 };
 
 export const getLayerByShortcut = (code: string): LayerId | undefined =>

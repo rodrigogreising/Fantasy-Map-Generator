@@ -1,5 +1,6 @@
 // Save the whole .map project to storage, machine or cloud
 
+import { serializeNodes } from "@/artae/nodes";
 import { GraphOverride } from "@/model/graph/graph-override";
 import { mapHistory } from "@/model/map-history";
 import { Names } from "@/model/society/names-generator";
@@ -206,7 +207,8 @@ function prepareMapData(viewOnly = false): string {
     layers,
     graphOverride,
     journeys,
-    legends
+    legends,
+    serializeNodes() // Artae fork: the setting's nodes, always the last record
   ].join("\r\n");
   return mapData;
 }

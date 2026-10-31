@@ -14,6 +14,9 @@ export const LAYER_TOGGLES = new Map<LayerId, LayerButton>([
   ["heightmap", { label: t("Heightmap"), shortcut: "KeyH" }],
   ["lakes", { label: t("Lakes"), shortcut: "KeyQ" }],
   ["biomes", { label: t("Biomes"), shortcut: "KeyB" }],
+  ["elements", { label: "Mana" }], // Artae
+  ["nodes", { label: "Nodos" }], // Artae
+  ["realmBorders", { label: "Fronteras" }], // Artae
   ["cells", { label: t("Cells"), shortcut: "KeyE" }],
   ["grid", { label: t("Grid"), shortcut: "Semicolon", hint: `; (${t("semicolon")})` }],
   ["coordinates", { label: t("Coordinates"), shortcut: "KeyO" }],

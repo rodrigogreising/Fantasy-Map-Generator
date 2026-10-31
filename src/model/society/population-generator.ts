@@ -1,4 +1,5 @@
 import { max, mean, median, sum } from "d3";
+import { marineHabitability } from "@/artae/marine";
 import { Goods } from "@/model/economy/goods-generator";
 import type { Burg } from "@/model/political/burgs-generator";
 import { isWater } from "@/utils/height-utils";
@@ -27,11 +28,18 @@ class PopulationModule {
 
     const meanFlux = median(cells.fl.filter(f => f)) || 0;
     const maxFlux = max(cells.fl)! + max(cells.conf)!; // to normalize flux
-    const meanArea = mean(cells.area)!; // to adjust population by cell area
+    const meanArea = mean(
+      cells.i.filter(i => cells.h[i] >= 20 || cells.t[i] === -1 || cells.t[i] === -2).map(i => cells.area[i])
+    )!; // Artae: the deep ocean, now kept, leaves the land scale as it was
     const getGoodValue = (i: number) => (cells.good?.[i] ? (Goods.get(cells.good[i])?.value ?? 0) : 0);
 
     for (const i of cells.i) {
-      if (isWater(i, pack)) continue; // no population in water
+      if (isWater(i, pack)) {
+        // Artae: the seas are inhabited
+        cells.s[i] = marineHabitability(i) / 5;
+        cells.pop[i] = (cells.s[i] * cells.area[i]) / meanArea;
+        continue;
+      }
       let score = biomes[cells.biome[i]].habitability; // base suitability derived from biome habitability
       if (!score) continue; // uninhabitable biomes has 0 suitability
 

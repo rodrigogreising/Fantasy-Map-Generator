@@ -1,6 +1,7 @@
 import Alea from "alea";
 import { type CurveFactory, curveCatmullRom, line } from "d3";
 import Delaunator from "delaunator";
+import { CURRENTS, CURRENTS_STYLE, currentStepCost, isMarineBurg } from "@/artae/currents";
 import type { Label } from "@/model/annotations/labels-generator";
 import { Pack } from "@/model/graph/pack-generator";
 import type { Point } from "@/model/graph/voronoi";
@@ -45,7 +46,8 @@ const models: Record<string, Record<string, number>> = {
     burg_suffix: 4,
     prefix_suffix: 2,
     the_descriptor_prefix_suffix: 1
-  }
+  },
+  currents: { burg_suffix: 4, prefix_suffix: 3, the_descriptor_prefix_suffix: 1 } // Artae
 };
 
 const prefixes: string[] = [
@@ -177,7 +179,8 @@ const descriptors = [
 const suffixes: Record<string, Record<string, number>> = {
   roads: { road: 7, route: 3, way: 2, highway: 1 },
   trails: { trail: 4, path: 1, track: 1, pass: 1 },
-  searoutes: { route: 5, lane: 2, passage: 1, "water way": 1 }
+  searoutes: { route: 5, lane: 2, passage: 1, "water way": 1 },
+  currents: { current: 6, drift: 2, stream: 2, flow: 1 } // Artae
 };
 
 export interface Route {
@@ -236,6 +239,7 @@ class RoutesModule {
 
     pack.routes = this.createRoutesData(lockedRoutes);
     pack.cells.routes = this.buildLinks(pack.routes);
+    this.ensureRouteGroupStyles(); // Artae: currents bring their own style
   }
 
   private sortBurgsByFeature(burgs: Burg[]) {
@@ -249,6 +253,7 @@ class RoutesModule {
     };
 
     for (const burg of burgs) {
+      if (isMarineBurg(burg)) continue; // Artae: marine cities have no roads; they get currents
       if (burg.i && !burg.removed) {
         const { feature, capital, port } = burg;
         if (feature === undefined) continue;
@@ -507,6 +512,67 @@ class RoutesModule {
     return seaRoutes;
   }
 
+  /** Artae: currents between marine cities, through water only: capital networks and town networks per water body,
+   * plus a link from each coastal land port to the nearest marine city in its waters */
+  private generateCurrents() {
+    log.time("generateCurrents");
+    const marine = pack.burgs.filter(isMarineBurg);
+    const currents: Route[] = [];
+    if (!marine.length) return currents;
+    // currents keep their own network: sharing searoutes' connections would fold them into the shipping lanes
+    const shared = this.connections;
+    this.connections = new Map();
+
+    const byFeature: Record<number, Burg[]> = {};
+    for (const burg of marine) {
+      const feature = pack.cells.f[burg.cell];
+      if (!byFeature[feature]) byFeature[feature] = [];
+      byFeature[feature].push(burg);
+    }
+    const getCost = (current: number, next: number) =>
+      currentStepCost(current, next, this.connections.has(`${current}-${next}`));
+    const connect = (start: number, exit: number, feature: number) => {
+      const path = findPath(start, this.createWaterExitCheck(exit), getCost, pack);
+      if (!path) return;
+      for (const segment of this.getRouteSegments(path)) {
+        this.addConnections(segment);
+        currents.push({ feature, cells: segment } as Route);
+      }
+    };
+    const network = (burgs: Burg[], feature: number) => {
+      const edges = this.calculateUrquhartEdges(burgs.map(burg => [burg.x, burg.y] as Point));
+      for (const [from, to] of edges) connect(burgs[from].cell, burgs[to].cell, feature);
+    };
+
+    for (const [key, burgs] of Object.entries(byFeature)) {
+      network(
+        burgs.filter(burg => burg.capital),
+        Number(key)
+      );
+      network(burgs, Number(key));
+    }
+
+    const { width, height } = options.map.graph;
+    const reach = Math.sqrt((width * height) / marine.length); // about the spacing between marine cities
+    for (const port of pack.burgs) {
+      if (!port.i || port.removed || !port.port || isMarineBurg(port)) continue;
+      const nearest = (byFeature[port.port] ?? []).reduce<Burg | undefined>(
+        (best, burg) =>
+          !best ||
+          distanceSquared([burg.x, burg.y], [port.x, port.y]) < distanceSquared([best.x, best.y], [port.x, port.y])
+            ? burg
+            : best,
+        undefined
+      );
+      if (nearest && distanceSquared([nearest.x, nearest.y], [port.x, port.y]) < reach * reach)
+        connect(nearest.cell, port.cell, port.port);
+    }
+
+    this.connections = shared;
+    log.timeEnd("generateCurrents");
+    return currents;
+  }
+
   private preparePointsArray(): Point[] {
     return pack.cells.p.map((_point, cellId) => this.getCellAnchor(cellId));
   }
@@ -634,7 +700,7 @@ class RoutesModule {
   }
 
   private getPoints(group: string, cells: number[], points: Point[]) {
-    if (group === "searoutes") {
+    if (group === "searoutes" || group === CURRENTS) {
       const anchors = cells.map(cellId => points[cellId]);
       return this.addMeandering(cells, anchors);
     }
@@ -703,6 +769,7 @@ class RoutesModule {
 
   private createRoutesData(routes: Route[]) {
     const seaRoutes = this.generateSeaRoutes();
+    const currents = this.generateCurrents(); // Artae
     const mainRoads = this.generateMainRoads();
     const trails = this.generateTrails();
     const pointsArray = this.preparePointsArray();
@@ -726,6 +793,14 @@ class RoutesModule {
       const points = this.getPoints("searoutes", cells!, pointsArray);
       const name = this.generateName({ group: "searoutes", points });
       routes.push({ i: routes.length, group: "searoutes", name, feature, points, tags: [] });
+    }
+
+    // Artae: marine peoples' currents
+    for (const { feature, cells, merged } of this.mergeRoutes(currents)) {
+      if (merged) continue;
+      const points = this.getPoints(CURRENTS, cells!, pointsArray);
+      const name = this.generateName({ group: CURRENTS, points });
+      routes.push({ i: routes.length, group: CURRENTS, name, feature, points, tags: [] });
     }
 
     return routes;
@@ -759,7 +834,7 @@ class RoutesModule {
     if (!template) return;
     // presets are also applied on initial page load, before any map (and its routes) exists
     for (const group of new Set((pack.routes ?? []).map(route => route.group))) {
-      if (!groups[group]) groups[group] = structuredClone(template);
+      if (!groups[group]) groups[group] = structuredClone(group === CURRENTS ? CURRENTS_STYLE : template); // Artae
     }
   }
 
@@ -877,10 +952,18 @@ class RoutesModule {
     });
     if (from === to) throw new Error("A route connects two different burgs");
 
-    const isWater = group === "searoutes";
-    const cells = isWater
-      ? this.findWaterPath(from.cell, to.cell)
-      : findPath(from.cell, (next: number) => next === to.cell, this.getLandPathCost.bind(this), pack);
+    const isWater = group === "searoutes" || group === CURRENTS; // Artae: currents run through water too
+    const cells =
+      group === CURRENTS
+        ? findPath(
+            from.cell,
+            this.createWaterExitCheck(to.cell),
+            (a: number, b: number) => currentStepCost(a, b, false),
+            pack
+          )
+        : isWater
+          ? this.findWaterPath(from.cell, to.cell)
+          : findPath(from.cell, (next: number) => next === to.cell, this.getLandPathCost.bind(this), pack);
     if (!cells) throw new Error(`There is no ${isWater ? "water" : "land"} path from burg ${from.i} to burg ${to.i}`);
 
     const points = isWater ? this.getWaterPoints(cells) : this.getPoints(group, cells, this.preparePointsArray());
