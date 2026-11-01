@@ -1,7 +1,8 @@
 // Artae: regenerate peoples and realms on the terrain and nodes already on screen. Nodes come after the map in
 // Artae's flow, so this is how realms get to feel them (see src/artae/geopolitics-costs.ts)
+
 import { colorRealmsByEssence } from "@/artae/geopolitics";
-import { applyCanonBurgs, applyCanonCultures, applyCanonStates, loadSeed, loreReport } from "@/artae/lore";
+import { applyCanonBurgs, applyCanonCultures, applyCanonStates, loadSeed, loreMap, loreReport } from "@/artae/lore";
 import { loadProfile, settingOf } from "@/artae/profile";
 import { Markets } from "@/model/economy/markets-generator";
 import { Production } from "@/model/economy/production-generator";
@@ -50,7 +51,7 @@ const STEPS: [string, () => unknown][] = [
 /** Rerun cultures, burgs, states, routes, religions, provinces and what hangs on them, keeping terrain and nodes.
  * The canon's `generate` entries for the repo map on screen always appear (see src/artae/lore.ts) */
 export async function regeneratePolitics() {
-  const map = globalThis.artae?.current;
+  const map = loreMap();
   if (map) await loadProfile(settingOf(map)); // a repo map's setting decides the elements; otherwise keep the profile in use
   await loadSeed(map);
   for (const [id, run] of STEPS) {

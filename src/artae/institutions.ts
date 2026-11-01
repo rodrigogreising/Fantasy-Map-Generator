@@ -2,7 +2,9 @@
 // kind, rolled from the world profile's kinds with a tint (one of the profile's pantheon tints, never chosen by
 // geography). A canon example for a pair and kind replaces the rolled archetype. Towns host the institutions whose
 // pairs are strong where they stand
+
 import { ELEMENTS } from "@/artae/elements";
+import { loreMap } from "@/artae/lore";
 import * as Nodes from "@/artae/nodes";
 import { onProfile, type Profile, type ProfileKind, profile } from "@/artae/profile";
 
@@ -74,7 +76,7 @@ let canonLoading: string | undefined;
 
 /** Concrete institutions the canon defines for the repo map on screen; loaded once per map, empty until then */
 function canonInstitutions(): CanonInstitution[] {
-  const map = (globalThis as { artae?: { current?: string } }).artae?.current;
+  const map = loreMap();
   if (!map) return [];
   if (canonCache?.map === map) return canonCache.list;
   if (canonLoading !== map) {
@@ -94,7 +96,7 @@ function canonInstitutions(): CanonInstitution[] {
 /** Load the canon examples for the map on screen before showing institutions */
 export async function loadCanonInstitutions(): Promise<void> {
   canonInstitutions();
-  const map = (globalThis as { artae?: { current?: string } }).artae?.current;
+  const map = loreMap();
   for (let tries = 0; map && canonCache?.map !== map && tries < 20; tries++) await new Promise(r => setTimeout(r, 50));
 }
 

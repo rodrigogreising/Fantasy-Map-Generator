@@ -62,6 +62,12 @@ let seed: Seed = EMPTY;
 let report: string[] = [];
 
 /** Fetch the canon seed of a repo map; no map, no seed */
+/** The repo map whose canon applies to the map on screen: the one opened, or, for a freshly generated map not yet
+ * saved under a name, the one named in ?artae= (a new iteration of that world and layer) */
+export function loreMap(): string | undefined {
+  return globalThis.artae?.current ?? new URL(location.href).searchParams.get("artae")?.split("#")[0] ?? undefined;
+}
+
 export async function loadSeed(map: string | undefined): Promise<Seed> {
   seed = EMPTY;
   report = [];

@@ -217,6 +217,26 @@ async function unlinked(
   );
 }
 
+let pipelineOwner: string | undefined; // who is running the pipeline now, so the watcher doesn't run it twice
+
+/** Terrain → nodes → civilization, on the map on screen; the setting is the one in ?artae= (its profile) */
+async function runPipeline(setting = settingOf(new URL(location.href).searchParams.get("artae") ?? undefined)) {
+  if (setting) await loadProfile(setting);
+  generateNodes();
+  const politics = await regeneratePolitics();
+  Layers.draw("nodes", "elements");
+  return politics;
+}
+
+/** The map on screen was just generated, not loaded from a file (a loaded map keeps its file's creation date), and
+ * it is not the throwaway map the page generates at boot before opening the repo map named in ?artae= */
+function isFreshlyGenerated(): boolean {
+  const entry = mapHistory.at(-1);
+  if (!entry || pack.artaeNodes?.length) return false;
+  if (mapHistory.length === 1 && new URL(location.href).searchParams.get("artae")) return false;
+  return Math.abs(entry.registeredAt - entry.created) < 10000;
+}
+
 /** Generate a new whole-planet map (equirectangular, 2:1) and wait for it. The settings are pinned, so the
  * generator keeps them for later maps too; the repo name is dropped until saved. `setting` picks the world profile
  * (its elements, tints…); without it the default profile is used */
@@ -247,11 +267,11 @@ async function newWorld({
   options.generation.graph.width = width;
   options.generation.graph.height = width / 2;
   const before = mapHistory.length;
+  pipelineOwner = "newWorld";
   regenerateMap(seed ? { seed } : "artae new world");
   await waitFor(() => mapHistory.length > before, 600000);
-  // terrain first, then the nodes it gives rise to, then the civilization built on the nodes
-  generateNodes();
-  const politics = await regeneratePolitics();
+  const politics = await runPipeline(setting);
+  pipelineOwner = undefined;
   return {
     seed: options.map.seed,
     gridCells: grid.cells.i.length,
@@ -390,11 +410,18 @@ declare global {
 }
 globalThis.artae = bridge;
 
-// every map that comes on screen opens in the default view
+// every map that comes on screen opens in the default view; a freshly generated one (the generator's own "New map"
+// included) goes through the pipeline first: its terrain gives rise to nodes, and the civilization is rebuilt on them
 let shownMaps = 0;
 setInterval(() => {
   if (mapHistory.length === shownMaps) return;
   shownMaps = mapHistory.length;
+  if (isFreshlyGenerated() && !pipelineOwner) {
+    pipelineOwner = "watcher";
+    void runPipeline()
+      .then(() => applyPreset(MAP_PRESET))
+      .finally(() => (pipelineOwner = undefined));
+  }
   if (defaultView() !== "viewStandard") void view();
 }, 1000);
 
