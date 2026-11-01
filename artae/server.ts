@@ -6,7 +6,6 @@ import { load as parseYaml } from "js-yaml";
 import { marked } from "marked";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
-import { ELEMENTS } from "../src/artae/elements";
 
 const ROOT = resolve(process.env.ARTAE_ROOT ?? fileURLToPath(new URL("../../..", import.meta.url)));
 const MAPS = join(ROOT, "map/worlds");
@@ -72,9 +71,21 @@ const articles = (): Article[] =>
 const list = (value: unknown): string[] => (value === undefined ? [] : ([] as unknown[]).concat(value).map(String));
 const text = (value: unknown): string | undefined => (typeof value === "string" && value ? value : undefined);
 
+/** The element names of a setting's profile, or of the neutral default profile */
+function elementNames(setting: string): string[] {
+  const file = resolve(PROFILES, `${setting}.json`);
+  const fallback = fileURLToPath(new URL("../src/artae/default-profile.json", import.meta.url));
+  const read = (path: string) => (JSON.parse(readFileSync(path, "utf8")).elements as { name: string }[]).map(e => e.name);
+  try {
+    return read(/^[\w-]+$/.test(setting) ? file : fallback);
+  } catch {
+    return read(fallback);
+  }
+}
+
 /** What the canon asks the generator to put on a map: cultures, states and burgs, each tied to its article */
 function seedFor(map: string) {
-  const known = new Set(ELEMENTS.map(element => element.name));
+  const known = new Set(elementNames(map.split("/")[0]));
   const seed = {
     map,
     cultures: [] as unknown[],
