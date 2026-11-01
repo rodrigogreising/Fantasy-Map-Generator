@@ -223,9 +223,7 @@ let pipelineOwner: string | undefined; // who is running the pipeline now, so th
 async function runPipeline(setting = settingOf(new URL(location.href).searchParams.get("artae") ?? undefined)) {
   if (setting) await loadProfile(setting);
   generateNodes();
-  const politics = await regeneratePolitics();
-  Layers.draw("nodes", "elements");
-  return politics;
+  return regeneratePolitics(); // its final redraw covers the nodes and their mana
 }
 
 /** The map on screen was just generated, not loaded from a file (a loaded map keeps its file's creation date) */

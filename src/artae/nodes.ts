@@ -2,9 +2,11 @@
 // placed where the geography expresses the pair best, levelled within the profile's range by how strong that is. Nodes are their own collection, `pack.artaeNodes`,
 // saved as the map file's last record; the mana field is derived from them and drawn by the "elements" layer, the
 // nodes themselves by the "nodes" layer
+
 import { interpolateRgb } from "d3";
-import { type Affinity, computeAffinity, ELEMENTS, elementLabel } from "@/artae/elements";
+import { type Affinity, computeAffinity, ELEMENTS, elementLabel, sortedCells } from "@/artae/elements";
 import { profile } from "@/artae/profile";
+import { rasterImage } from "@/artae/raster";
 import { ensureEl } from "@/utils/node-utils";
 import { getIsolines } from "@/utils/path-utils";
 
@@ -82,22 +84,32 @@ interface Candidate {
   score: number;
 }
 
-/** Best cells for an ordered pair: the primary weighs double */
+/** Each element's cells from its highest affinity down, cached for one affinity table */
+let descendingCache: { value: Float32Array[]; order: Uint32Array[] } | undefined;
+function descending(value: Float32Array[], element: number): Uint32Array {
+  if (descendingCache?.value !== value) descendingCache = { value, order: [] };
+  const { order } = descendingCache;
+  order[element] ??= sortedCells(value[element], true).order;
+  return order[element];
+}
+
+/** Best cells for an ordered pair: the primary weighs double. Cells are visited from the primary's best down, and
+ * the walk stops once even a perfect secondary could not reach the list: the same cells as scanning the whole map */
 function topCells(value: Float32Array[], a: number, b: number, count: number): Candidate[] {
-  const n = value[0].length;
   const pair = a * ELEMENTS.length + b;
-  const best: Candidate[] = [];
-  let floor = -1;
-  for (let cell = 0; cell < n; cell++) {
-    const score = (2 * value[a][cell] + value[b][cell]) / 3;
-    if (best.length >= count && score <= floor) continue;
-    best.push({ pair, cell, score });
-    if (best.length > count * 2) {
-      best.sort((x, y) => y.score - x.score).length = count;
-      floor = best[count - 1].score;
-    }
+  const [va, vb] = [value[a], value[b]];
+  const best: Candidate[] = []; // by score, then cell, as a full scan with a stable sort ranks them
+  const before = (x: Candidate, y: Candidate) => x.score > y.score || (x.score === y.score && x.cell < y.cell);
+  for (const cell of descending(value, a)) {
+    if (best.length >= count && (2 * va[cell] + 1) / 3 < best[count - 1].score) break;
+    const candidate = { pair, cell, score: (2 * va[cell] + vb[cell]) / 3 };
+    if (best.length >= count && !before(candidate, best[count - 1])) continue;
+    let k = best.length;
+    while (k > 0 && before(candidate, best[k - 1])) k--;
+    best.splice(k, 0, candidate);
+    if (best.length > count) best.length = count;
   }
-  return best.sort((x, y) => y.score - x.score).slice(0, count);
+  return best;
 }
 
 /** Replace every unlocked node with a fresh set; locked nodes stay and keep their pairs. `extra` adds that many more
@@ -207,6 +219,7 @@ export function nodeName({ primary, secondary, poles }: NodeData): string {
 export interface ManaField {
   owner: Int32Array;
   level: Float32Array;
+  elements: Float32Array; // each element's level per cell: cell * ELEMENTS.length + element
 }
 
 const CORE = 0.25; // core radius, as a share of the typical spacing between nodes: inside it the level barely falls
@@ -224,50 +237,79 @@ function toSphere(x: number, y: number): [number, number, number] {
  * sources of level 10 make a level 11 spot. A node's mana counts at a spot from level 1 on; fainter tails from across
  * the planet don't add up */
 const MIN_LEVEL = 1;
-const energy = (level: number) => (level >= MIN_LEVEL ? profile().levelBase ** level : 0);
 const logBase = (total: number, base: number) => (base === 2 ? Math.log2(total) : Math.log(total) / Math.log(base));
 const toLevel = (total: number) => (total > 1 ? logBase(total, profile().levelBase) : 0);
 
 export function manaField(): ManaField {
   const list = nodes();
   const n = grid.cells.i.length;
+  const count = ELEMENTS.length;
   const owner = new Int32Array(n).fill(-1);
   const level = new Float32Array(n);
-  if (!list.length) return { owner, level };
+  const elements = new Float32Array(n * count);
+  if (!list.length) return { owner, level, elements };
 
+  const base = profile().levelBase;
   const core = CORE * Math.sqrt((4 * Math.PI) / list.length);
   const core2 = core * core;
-  const sources = list.map(({ x, y, node }) => [...toSphere(x, y), node.level]);
+  const m = list.length;
+  const sx = new Float64Array(m);
+  const sy = new Float64Array(m);
+  const sz = new Float64Array(m);
+  const strength = new Float64Array(m);
+  const primary = new Int32Array(m);
+  const secondary = new Int32Array(m);
+  for (const [k, { x, y, node }] of list.entries()) {
+    [sx[k], sy[k], sz[k]] = toSphere(x, y);
+    strength[k] = node.level * core2;
+    primary[k] = node.primary;
+    secondary[k] = node.secondary;
+  }
+  const totals = new Float64Array(count);
   for (let cell = 0; cell < n; cell++) {
     const [cx, cy, cz] = toSphere(grid.points[cell][0], grid.points[cell][1]);
     let best = -1;
     let strongest = 0;
     let total = 0;
-    for (let k = 0; k < sources.length; k++) {
-      const [sx, sy, sz, strength] = sources[k];
-      const d2 = (cx - sx) ** 2 + (cy - sy) ** 2 + (cz - sz) ** 2;
-      const p = (strength * core2) / (core2 + d2);
-      total += energy(p);
+    totals.fill(0);
+    for (let k = 0; k < m; k++) {
+      const dx = cx - sx[k];
+      const dy = cy - sy[k];
+      const dz = cz - sz[k];
+      const p = strength[k] / (core2 + dx * dx + dy * dy + dz * dz);
       if (p > strongest) {
         strongest = p;
         best = k;
       }
+      if (p < MIN_LEVEL) continue;
+      const e = base ** p;
+      total += e;
+      if (primary[k] === secondary[k]) totals[primary[k]] += e;
+      else {
+        totals[primary[k]] += (e * 2) / 3;
+        totals[secondary[k]] += e / 3;
+      }
     }
     owner[cell] = best;
     level[cell] = toLevel(total);
+    for (let e = 0; e < count; e++) elements[cell * count + e] = toLevel(totals[e]);
   }
-  return { owner, level };
+  return { owner, level, elements };
 }
 
-let fieldCache: { markers: unknown; signature: string; field: ManaField } | undefined;
+let fieldCache: { markers: unknown; list: unknown; signature: string; field: ManaField } | undefined;
 export function cachedField(): ManaField {
   const signature = nodes()
     .map(m => `${m.i}:${m.node.gridCell}:${m.node.level}`)
     .join(",");
   if (fieldCache?.markers !== grid.cells || fieldCache.signature !== signature)
-    fieldCache = { markers: grid.cells, signature, field: manaField() };
+    fieldCache = { markers: grid.cells, list: pack.artaeNodes, signature, field: manaField() };
   return fieldCache.field;
 }
+
+/** The field without rebuilding the signature, for per-cell lookups in a loop: valid while the node list is the same */
+const quickField = () =>
+  fieldCache?.markers === grid.cells && fieldCache.list === pack.artaeNodes ? fieldCache.field : cachedField();
 
 /** A node's mana colour: its primary element, tinted a third of the way to its secondary */
 export const manaColor = ({ primary, secondary }: NodeData) =>
@@ -279,7 +321,7 @@ const band = (level: number) => Math.min(BAND_OPACITY.length - 1, Math.floor(lev
 /** Opacity per band (0-3, 3-6, 6-9, 9-12…): faint but distinct steps below 9, clearly visible from 9-12 on */
 const BAND_OPACITY = [0.03, 0.13, 0.23, 0.42, 0.55, 0.66, 0.75, 0.82, 0.88, 0.92, 0.95];
 
-/** Each cell in its node's mana colour, more opaque the higher its level, with region outlines */
+/** Each cell in its node's mana colour, more opaque the higher its level (one bitmap), with region outlines */
 export function drawMana(): void {
   const list = nodes();
   const group = ensureEl("elements");
@@ -298,10 +340,12 @@ export function drawMana(): void {
     const node = list[Math.floor(+key / bands)].node;
     const opacity = BAND_OPACITY[+key % bands];
     const color = interpolateRgb("#9a9a9a", manaColor(node))(0.25 + 0.75 * Math.min(1, opacity / 0.75)); // low levels greyed
-    return `<path d="${fill}" fill="${color}" fill-opacity="${opacity}" stroke="none" />`;
+    return { d: fill, color, opacity };
   });
-  const borders = Object.values(outlines).map(({ fill }) => `<path d="${fill}" fill="none" />`);
-  group.innerHTML = fills.join("") + borders.join("");
+  const borders = Object.values(outlines)
+    .map(({ fill }) => fill)
+    .join("");
+  group.innerHTML = `${rasterImage(fills)}<path d="${borders}" fill="none" />`;
 }
 
 /** What hovering a node shows: its name, level and both elements with their families */
@@ -316,40 +360,8 @@ export function nodeLabel(node: NodeData, name: string): string {
  * (2/3 of a node's mana goes to its primary element, 1/3 to its secondary). No element exceeds the spot's total.
  * Indexed by element */
 export function elementLevels(gridCell: number): number[] {
-  const { sources, core2 } = nodeSources();
-  const totals = new Array<number>(ELEMENTS.length).fill(0);
-  if (!sources.length) return totals;
-  const [cx, cy, cz] = toSphere(grid.points[gridCell][0], grid.points[gridCell][1]);
-  for (const { sx, sy, sz, level, primary, secondary } of sources) {
-    const e = energy((level * core2) / (core2 + (cx - sx) ** 2 + (cy - sy) ** 2 + (cz - sz) ** 2));
-    if (!e) continue;
-    totals[primary] += primary === secondary ? e : (e * 2) / 3;
-    if (primary !== secondary) totals[secondary] += e / 3;
-  }
-  return totals.map(toLevel);
-}
-
-/** Nodes as points on the unit sphere, cached while the nodes and the map stay the same */
-let sourceCache: { list: unknown; map: unknown; sources: Source[]; core2: number } | undefined;
-interface Source {
-  sx: number;
-  sy: number;
-  sz: number;
-  level: number;
-  primary: number;
-  secondary: number;
-}
-function nodeSources(): { sources: Source[]; core2: number } {
-  const list = nodes();
-  // regenerating nodes makes a new list, so the list itself is the cache key
-  if (sourceCache && sourceCache.list === pack.artaeNodes && sourceCache.map === grid.cells) return sourceCache;
-  const core = CORE * Math.sqrt((4 * Math.PI) / Math.max(1, list.length));
-  const sources = list.map(({ x, y, node }) => {
-    const [sx, sy, sz] = toSphere(x, y);
-    return { sx, sy, sz, level: node.level, primary: node.primary, secondary: node.secondary };
-  });
-  sourceCache = { list: pack.artaeNodes, map: grid.cells, sources, core2: core * core };
-  return sourceCache;
+  const count = ELEMENTS.length;
+  return Array.from(quickField().elements.subarray(gridCell * count, (gridCell + 1) * count));
 }
 
 /** The mana mix at a grid cell: each element's share of the spot's mana, strongest first */

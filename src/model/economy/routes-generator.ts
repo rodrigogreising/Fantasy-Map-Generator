@@ -1,7 +1,7 @@
 import Alea from "alea";
 import { type CurveFactory, curveCatmullRom, line } from "d3";
 import Delaunator from "delaunator";
-import { CURRENTS, CURRENTS_STYLE, currentStepCost, isMarineBurg } from "@/artae/currents";
+import { CURRENTS, CURRENTS_STYLE, currentCosts, isMarineBurg } from "@/artae/currents";
 import type { Label } from "@/model/annotations/labels-generator";
 import { Pack } from "@/model/graph/pack-generator";
 import type { Point } from "@/model/graph/voronoi";
@@ -529,13 +529,20 @@ class RoutesModule {
       if (!byFeature[feature]) byFeature[feature] = [];
       byFeature[feature].push(burg);
     }
-    const getCost = (current: number, next: number) =>
-      currentStepCost(current, next, this.connections.has(`${current}-${next}`));
+    // numeric keys: a string per step of every search was most of the time spent here
+    const n = pack.cells.i.length;
+    const laid = new Set<number>();
+    const getCost = currentCosts((current, next) => laid.has(current * n + next));
     const connect = (start: number, exit: number, feature: number) => {
       const path = findPath(start, this.createWaterExitCheck(exit), getCost, pack);
       if (!path) return;
       for (const segment of this.getRouteSegments(path)) {
         this.addConnections(segment);
+        for (let k = 1; k < segment.length; k++) {
+          if (!segment[k]) continue; // as addConnections: cell 0 never links
+          laid.add(segment[k - 1] * n + segment[k]);
+          laid.add(segment[k] * n + segment[k - 1]);
+        }
         currents.push({ feature, cells: segment } as Route);
       }
     };
@@ -958,7 +965,7 @@ class RoutesModule {
         ? findPath(
             from.cell,
             this.createWaterExitCheck(to.cell),
-            (a: number, b: number) => currentStepCost(a, b, false),
+            currentCosts(() => false),
             pack
           )
         : isWater

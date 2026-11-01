@@ -168,8 +168,10 @@ export function applyCanonCultures(): void {
     const bonus = nodeBonus(elements);
     const others = living(pack.cultures).filter(c => c !== slot && c.center !== undefined);
     const pool = cells.i.filter(i => cells.s[i] > 0 && cells.h[i] < 20 === marine && !cells.burg[i]);
-    const score = (i: number) => (elements.length ? fit(i, elements) : cells.s[i] / 100) + bonus(i);
-    const ranked = pool.sort((a, b) => score(b) - score(a));
+    const scores = new Map(
+      Array.from(pool, i => [i, (elements.length ? fit(i, elements) : cells.s[i] / 100) + bonus(i)] as const)
+    );
+    const ranked = pool.sort((a, b) => (scores.get(b) as number) - (scores.get(a) as number));
     const far = (i: number) =>
       others.every(
         c => Math.hypot(cells.p[c.center!][0] - cells.p[i][0], cells.p[c.center!][1] - cells.p[i][1]) > spacing
@@ -263,7 +265,13 @@ function bestCell(culture: Culture, near: number[], keep?: Burg): number | undef
       (!cells.burg[i] || cells.burg[i] === keep?.i)
   );
   const score = (i: number) => (near.length ? fit(i, near) + bonus(i) : 0) + cells.s[i] / 1000;
-  return pool.sort((a, b) => score(b) - score(a))[0];
+  let best: number | undefined;
+  let bestScore = -Infinity;
+  for (const i of pool) {
+    const value = score(i);
+    if (value > bestScore) [best, bestScore] = [i, value]; // the first of equals, as a stable sort would give
+  }
+  return best;
 }
 
 /** After Burgs.generate: every canon culture that needs one gets a capital, and canon burgs are placed by name */

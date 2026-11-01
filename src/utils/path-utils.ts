@@ -57,7 +57,7 @@ const getBorderPath = (
  * @param {number[]} from - An array mapping each cell ID to the cell ID it came from.
  * @returns {number[]} An array of cell IDs representing the path from start to exit.
  */
-const restorePath = (exit: number, start: number, from: number[]): number[] => {
+const restorePath = (exit: number, start: number, from: ArrayLike<number>): number[] => {
   const pathCells: number[] = [];
 
   let current = exit;
@@ -345,8 +345,9 @@ export const findPath = (
 ): number[] | null => {
   if (isExit(start)) return null;
 
-  const from: number[] = [];
-  const cost: number[] = [];
+  const size = packedGraph.cells.c.length;
+  const from = new Int32Array(size);
+  const cost = new Float64Array(size).fill(Infinity);
   const queue = new FlatQueue();
   queue.push(start, 0);
 

@@ -57,20 +57,29 @@ export async function regeneratePolitics() {
   const map = loreMap();
   if (map) await loadProfile(settingOf(map)); // a repo map's setting decides the elements; otherwise keep the profile in use
   await loadSeed(map);
+  const timings: Record<string, number> = {};
   for (const [id, run] of STEPS) {
+    await new Promise(resolve => setTimeout(resolve)); // let the page breathe between steps instead of freezing
     try {
+      const start = performance.now();
       run();
+      timings[id] = Math.round(performance.now() - start);
     } catch (error) {
       throw new Error(`regeneratePolitics failed at ${id}: ${(error as Error).message}`);
     }
   }
+  let start = performance.now();
   colorRealmsByEssence();
+  timings.colorRealms = Math.round(performance.now() - start);
+  start = performance.now();
   Layers.drawAll();
+  timings.draw = Math.round(performance.now() - start);
   const alive = <T extends { i: number; removed?: boolean }>(list: T[]) => list.filter(item => item.i && !item.removed);
   return {
     cultures: alive(pack.cultures).length,
     states: alive(pack.states).length,
     burgs: alive(pack.burgs).length,
-    lore: loreReport()
+    lore: loreReport(),
+    timings // ms per step
   };
 }

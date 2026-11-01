@@ -4,6 +4,7 @@ import { type Ecology, ecology, ecologyAt } from "@/artae/ecology";
 import { ELEMENTS } from "@/artae/elements";
 import { cachedField, findNode, nodes } from "@/artae/nodes";
 import { ecologyProfile, profile } from "@/artae/profile";
+import { rasterImage } from "@/artae/raster";
 import { Dialog } from "@/ui/dialog/dialog";
 import { ensureEl } from "@/utils/node-utils";
 import { getIsolines } from "@/utils/path-utils";
@@ -28,12 +29,9 @@ export function drawFauna(): void {
   const band = (cell: number) =>
     owner[cell] < 0 ? null : Math.min(BAND_OPACITY.length - 1, Math.floor(levels[owner[cell]] / BAND_STEP));
   const isolines = getIsolines(grid as unknown as Parameters<typeof getIsolines>[0], band, { fill: true });
-  group.innerHTML = Object.entries(isolines)
-    .map(
-      ([key, { fill }]) =>
-        `<path d="${fill}" fill="${FAUNA_COLOR}" fill-opacity="${BAND_OPACITY[+key]}" stroke="none" />`
-    )
-    .join("");
+  group.innerHTML = rasterImage(
+    Object.entries(isolines).map(([key, { fill }]) => ({ d: fill, color: FAUNA_COLOR, opacity: BAND_OPACITY[+key] }))
+  );
 }
 
 /** A line for the mana panel: the fauna of the region under the pointer */
