@@ -81,6 +81,8 @@ export interface Profile {
     pair: string; // pair phrase from {noun} and {adjective}
     pure: [string, string]; // adjective of a pure pair, masculine and feminine
     realm?: string; // realm and province names from {head} (strongest element) and {tail} (the next); default "{head}{tail}"
+    full?: string; // full realm and province names from {form} and {name}; without it the generator's English scheme
+    forms?: Record<string, string>; // the generator's form names ("Kingdom", "County") in the profile's language
     articles: Record<"m" | "f", { el: string; de: string; al: string }>;
   };
   elements: ProfileElement[];
