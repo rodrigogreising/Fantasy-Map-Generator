@@ -228,12 +228,10 @@ async function runPipeline(setting = settingOf(new URL(location.href).searchPara
   return politics;
 }
 
-/** The map on screen was just generated, not loaded from a file (a loaded map keeps its file's creation date), and
- * it is not the throwaway map the page generates at boot before opening the repo map named in ?artae= */
+/** The map on screen was just generated, not loaded from a file (a loaded map keeps its file's creation date) */
 function isFreshlyGenerated(): boolean {
   const entry = mapHistory.at(-1);
   if (!entry || pack.artaeNodes?.length) return false;
-  if (mapHistory.length === 1 && new URL(location.href).searchParams.get("artae")) return false;
   return Math.abs(entry.registeredAt - entry.created) < 10000;
 }
 
@@ -425,6 +423,5 @@ setInterval(() => {
   if (defaultView() !== "viewStandard") void view();
 }, 1000);
 
-// ?artae=<world>/<layer> opens that repo map once the first one is on screen
-const requested = new URL(location.href).searchParams.get("artae")?.split("#")[0];
-if (requested) void waitFor(() => mapHistory.length > 0).then(() => load(requested));
+/** ?artae=<world>/<layer>: the start-up opens that repo map instead of a random one (src/services/url-params.ts) */
+export const openRepoMap = (name: string) => load(name);

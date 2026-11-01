@@ -113,19 +113,29 @@ function rename<T extends Entity>(
 /** Realms named after the node of their capital (a realm is united under its biggest node); without a profile pattern the form keeps the generator's scheme ("Kingdom of X")
  * but never an adjective */
 export function nameRealms(): void {
-  rename(pack.states, pack.cells.state, state => pack.burgs[state.capital ?? 0]?.cell, (state, name) => {
-    state.name = name;
-    state.fullName = fullName(name, state.formName, () => {
-      const full = States.getFullName(state);
-      return full.startsWith(state.formName as string) ? full : `${name} ${state.formName}`;
-    });
-  });
+  rename(
+    pack.states,
+    pack.cells.state,
+    state => pack.burgs[state.capital ?? 0]?.cell,
+    (state, name) => {
+      state.name = name;
+      state.fullName = fullName(name, state.formName, () => {
+        const full = States.getFullName(state);
+        return full.startsWith(state.formName as string) ? full : `${name} ${state.formName}`;
+      });
+    }
+  );
 }
 
 /** Provinces (node districts) named after the node at their seat */
 export function nameProvinces(): void {
-  rename(pack.provinces, pack.cells.province, province => province.center, (province, name) => {
-    province.name = name;
-    province.fullName = fullName(name, province.formName, () => `${name} ${province.formName}`);
-  });
+  rename(
+    pack.provinces,
+    pack.cells.province,
+    province => province.center,
+    (province, name) => {
+      province.name = name;
+      province.fullName = fullName(name, province.formName, () => `${name} ${province.formName}`);
+    }
+  );
 }

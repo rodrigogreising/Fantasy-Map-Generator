@@ -38,6 +38,18 @@ export async function checkLoadParameters(): Promise<void> {
     Services.Load.showUploadErrorMessage(t("Map link is not a valid URL"), maplink);
   }
 
+  // Artae fork: ?artae=<map> opens that repo map instead of generating one first (see src/artae/bridge.ts)
+  const repoMap = params.get("artae")?.split("#")[0];
+  if (repoMap) {
+    try {
+      const { openRepoMap } = await import("@/artae/bridge");
+      await openRepoMap(repoMap);
+      return;
+    } catch (error) {
+      log.error(error);
+    }
+  }
+
   // a seed provided by the user or by MFCG: generate the map it describes
   if (params.get("seed")) {
     log.warn("Generate map for seed", params.get("seed"));
