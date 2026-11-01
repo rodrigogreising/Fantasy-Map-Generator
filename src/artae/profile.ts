@@ -18,6 +18,7 @@ export interface ProfileElement {
   gender?: "m" | "f"; // grammar for generated names (see grammar)
   article?: "m" | "f"; // article when it differs from the gender
   adjective?: [string, string]; // masculine, feminine: the element as the second word of a pair
+  roots?: { head: string[]; tail: string[] }; // word parts for realm and province names (see grammar.realm)
 }
 
 export interface ProfileTint {
@@ -79,6 +80,7 @@ export interface Profile {
   grammar: {
     pair: string; // pair phrase from {noun} and {adjective}
     pure: [string, string]; // adjective of a pure pair, masculine and feminine
+    realm?: string; // realm and province names from {head} (strongest element) and {tail} (the next); default "{head}{tail}"
     articles: Record<"m" | "f", { el: string; de: string; al: string }>;
   };
   elements: ProfileElement[];

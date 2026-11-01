@@ -4,6 +4,7 @@
 import { colorRealmsByEssence } from "@/artae/geopolitics";
 import { applyCanonBurgs, applyCanonCultures, applyCanonStates, loadSeed, loreMap, loreReport } from "@/artae/lore";
 import { loadProfile, settingOf } from "@/artae/profile";
+import { nameProvinces, nameRealms } from "@/artae/realm-names";
 import { Markets } from "@/model/economy/markets-generator";
 import { Production } from "@/model/economy/production-generator";
 import { Routes } from "@/model/economy/routes-generator";
@@ -39,7 +40,9 @@ const STEPS: [string, () => unknown][] = [
   ["stateStatistics", () => States.collectStatistics()],
   ["stateForms", () => States.defineStateForms()],
   ["canonStates", () => applyCanonStates()],
+  ["realmNames", () => nameRealms()],
   ["provinces", () => Provinces.generate()],
+  ["provinceNames", () => nameProvinces()],
   ["provincePoles", () => Provinces.getPoles()],
   ["markets", () => Markets.generate()],
   ["production", () => Production.produce()],
